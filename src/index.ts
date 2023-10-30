@@ -14,5 +14,11 @@ const client = new Client({
 	],
 });
 
+//機能の読み込み
+import { enableRoom } from "./room";
+
+//機能の有効化
+enableRoom(client);
+
 //ログイン
 client.login(config.botToken);
