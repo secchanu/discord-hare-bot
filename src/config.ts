@@ -1,10 +1,19 @@
 import { readFileSync } from "fs";
 import ini from "ini";
 
-const config = ini.parse(readFileSync("./config.ini", "utf-8"));
-
-export const defaultConfig = {
+const defaultConfig = {
 	botToken: "",
 };
 
-export default config as typeof defaultConfig;
+const config: typeof defaultConfig = {
+	...defaultConfig,
+	...(() => {
+		try {
+			return ini.parse(readFileSync("./config.ini", "utf-8"));
+		} catch {
+			return {};
+		}
+	})(),
+};
+
+export default config;
