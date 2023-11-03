@@ -2,6 +2,7 @@ import { Events } from "discord.js";
 import type { Client } from "discord.js";
 
 import { manager } from "./manager";
+import { enableGame } from "./game";
 
 //設定の読み込み
 import config from "./config";
@@ -12,4 +13,5 @@ import config from "./config";
 export const enableRoom = (client: Client) => {
 	if (!config.enable) return;
 	client.on(Events.VoiceStateUpdate, manager);
+	enableGame(client);
 };

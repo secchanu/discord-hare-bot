@@ -4,6 +4,9 @@ import ini from "ini";
 export const defaultConfig = {
 	enable: true,
 	readyChannelId: "",
+	useGame: true,
+	wantedChannelId: "",
+	ignoreRoleIds: [""],
 };
 
 const config: typeof defaultConfig = {
