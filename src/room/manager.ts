@@ -1,6 +1,7 @@
 import type { VoiceState } from "discord.js";
 
 import Room from "./Room";
+import GameRoom from "./game/GameRoom";
 
 //設定の読み込み
 import config from "./config";
@@ -17,7 +18,9 @@ const createRoom = async (oldState: VoiceState, newState: VoiceState) => {
 	if (newState.channelId !== config.readyChannelId) return;
 	const channelManager = newState.guild.channels;
 	const owner = newState.member;
-	const room = new Room(channelManager, owner);
+	const room = config.useGame
+		? new GameRoom(channelManager, owner)
+		: new Room(channelManager, owner);
 	const basePosition =
 		newState.channel?.parent?.rawPosition ?? newState.channel?.rawPosition;
 	const position = basePosition ? basePosition : undefined;
