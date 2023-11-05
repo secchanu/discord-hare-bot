@@ -14,6 +14,12 @@ const client = new Client({
 	],
 });
 
+//コマンドの読み込み
+import { setCommands } from "./command";
+
+//コマンドの登録
+setCommands(client);
+
 //機能の読み込み
 import { enableRoom } from "./room";
 
