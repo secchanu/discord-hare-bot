@@ -4,6 +4,7 @@ import type { Client } from "discord.js";
 import { manager } from "./manager";
 import { interactionHandler } from "./command";
 import { enableGame } from "./game";
+import { enableEvent } from "./event";
 
 //設定の読み込み
 import config from "./config";
@@ -16,4 +17,5 @@ export const enableRoom = (client: Client) => {
 	client.on(Events.VoiceStateUpdate, manager);
 	client.on(Events.InteractionCreate, interactionHandler);
 	enableGame(client);
+	enableEvent(client);
 };

@@ -7,6 +7,7 @@ export const defaultConfig = {
 	useGame: true,
 	wantedChannelId: "",
 	ignoreRoleIds: [""],
+	useEvent: true,
 };
 
 const config: typeof defaultConfig = {
