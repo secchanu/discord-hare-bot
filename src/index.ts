@@ -22,9 +22,11 @@ setCommands(client);
 
 //機能の読み込み
 import { enableRoom } from "./room";
+import { enableUtil } from "./util";
 
 //機能の有効化
 enableRoom(client);
+enableUtil(client);
 
 //ログイン
 client.login(config.botToken);
