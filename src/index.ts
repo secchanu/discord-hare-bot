@@ -1,32 +1,48 @@
-import { Client, GatewayIntentBits } from "discord.js";
+import { client, initializeClient } from "./bot/client";
+import { config } from "./bot/config";
+import { EXIT_CODE } from "./constants";
+import { registerEventHandlers } from "./events";
 
-//設定の読み込み
-import config from "./config";
+/**
+ * Bot のメインエントリーポイント
+ */
+async function main(): Promise<void> {
+	try {
+		// イベントハンドラーを登録
+		registerEventHandlers(client);
+		console.log("Event handlers registered");
 
-//クライアントの作成
-const client = new Client({
-	intents: [
-		GatewayIntentBits.Guilds,
-		GatewayIntentBits.GuildVoiceStates,
-		GatewayIntentBits.GuildMessages,
-		GatewayIntentBits.GuildScheduledEvents,
-		GatewayIntentBits.GuildPresences,
-	],
+		// Bot を起動
+		await initializeClient(config.botToken);
+		console.log("Bot initialization complete");
+	} catch (error) {
+		console.error("Failed to start bot", error);
+		process.exit(EXIT_CODE.ERROR);
+	}
+}
+
+// シャットダウンハンドラー
+process.on("SIGINT", () => {
+	console.log("Shutting down bot...");
+	client.destroy();
+	process.exit(EXIT_CODE.SUCCESS);
 });
 
-//コマンドの読み込み
-import { setCommands } from "./command";
+process.on("SIGTERM", () => {
+	console.log("Shutting down bot...");
+	client.destroy();
+	process.exit(EXIT_CODE.SUCCESS);
+});
 
-//コマンドの登録
-setCommands(client);
+// エラーハンドラー
+process.on("unhandledRejection", (error) => {
+	console.error("Unhandled rejection", error);
+});
 
-//機能の読み込み
-import { enableRoom } from "./room";
-import { enableUtil } from "./util";
+process.on("uncaughtException", (error) => {
+	console.error("Uncaught exception", error);
+	process.exit(EXIT_CODE.ERROR);
+});
 
-//機能の有効化
-enableRoom(client);
-enableUtil(client);
-
-//ログイン
-client.login(config.botToken);
+// Bot を起動
+main();

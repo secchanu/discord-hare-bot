@@ -1,14 +1,15 @@
 {
-	"extends": "@tsconfig/node-lts/tsconfig.json",
 	"compilerOptions": {
 		"newLine": "lf",
-		"outDir": "dist",
-		"rootDir": "src",
-		"sourceMap": true,
 
 		"noFallthroughCasesInSwitch": true,
 		"noImplicitOverride": true,
-		"noImplicitReturns": true
+		"noImplicitReturns": true,
+		"outDir": "dist",
+		"rootDir": "src",
+		"sourceMap": true
 	},
+	"exclude": ["node_modules", "dist"],
+	"extends": "@tsconfig/node-lts/tsconfig.json",
 	"include": ["src/**/*"]
 }
