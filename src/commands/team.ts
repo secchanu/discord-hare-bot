@@ -163,10 +163,9 @@ export const teamCommand: CommandHandler = {
 
 					await Promise.all(movePromises);
 					await buttonInteraction.editReply({
-						content: "チーム分けが完了しました",
-						components: [],
+						content: formatTeams(),
+						components: [moveRow],
 					});
-					collector.stop();
 					break;
 				}
 			}
