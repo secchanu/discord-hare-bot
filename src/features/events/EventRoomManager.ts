@@ -52,7 +52,9 @@ export class EventRoomManager {
 
 			// イベント参加者を追加
 			const subscribers = await event.fetchSubscribers();
-			await Promise.all(subscribers.map((sub) => room.join(sub.user)));
+			await Promise.all(
+				subscribers.map((sub) => room.setTextChannelVisibility(sub.user, true)),
+			);
 
 			// 保存
 			this.roomManager.getAll().set(roomId, room);
@@ -134,7 +136,7 @@ export class EventRoomManager {
 		const room = this.roomManager.get(parentId);
 		if (!room) return;
 
-		await room.join(user);
+		await room.setTextChannelVisibility(user, true);
 	}
 
 	/**
@@ -150,6 +152,6 @@ export class EventRoomManager {
 		const room = this.roomManager.get(parentId);
 		if (!room) return;
 
-		await room.leave(user);
+		await room.setTextChannelVisibility(user, false);
 	}
 }

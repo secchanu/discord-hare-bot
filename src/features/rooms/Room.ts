@@ -219,20 +219,21 @@ export class Room {
 	}
 
 	/**
-	 * メンバーがルームに参加
+	 * テキストチャンネルの閲覧可否を設定
+	 * @param member 対象メンバー
+	 * @param visible true: 閲覧可能にする、false: 閲覧不可にする
 	 */
-	async join(member: GuildMemberResolvable): Promise<void> {
-		await this.setTextChannelPermission(member, true);
-	}
+	async setTextChannelVisibility(
+		member: GuildMemberResolvable,
+		visible: boolean,
+	): Promise<void> {
+		if (!this.textChannelId) return;
+		const textChannel = this.channelManager.resolve(this.textChannelId);
+		if (!textChannel || textChannel.type !== ChannelType.GuildText) return;
 
-	/**
-	 * メンバーがルームから退出
-	 */
-	async leave(member: GuildMemberResolvable): Promise<void> {
-		// イベントルームの場合はテキストチャンネルの権限を削除
-		if (this.eventId) {
-			await this.setTextChannelPermission(member, false);
-		}
+		await textChannel.permissionOverwrites.edit(member, {
+			ViewChannel: visible ? true : null,
+		});
 	}
 
 	/**
@@ -347,22 +348,6 @@ export class Room {
 		];
 
 		await textChannel.permissionOverwrites.set(newOverwrites);
-	}
-
-	/**
-	 * テキストチャンネルの閲覧権限を設定
-	 */
-	private async setTextChannelPermission(
-		member: GuildMemberResolvable,
-		allow: boolean,
-	): Promise<void> {
-		if (!this.textChannelId) return;
-		const textChannel = this.channelManager.resolve(this.textChannelId);
-		if (!textChannel || textChannel.type !== ChannelType.GuildText) return;
-
-		await textChannel.permissionOverwrites.edit(member, {
-			ViewChannel: allow ? true : null,
-		});
 	}
 
 	/**

@@ -92,7 +92,7 @@ export class RoomManager {
 		if (newRoomId) {
 			const newRoom = this.rooms.get(newRoomId);
 			if (newRoom) {
-				await newRoom.join(newState.member);
+				await newRoom.setTextChannelVisibility(newState.member, true);
 			}
 		}
 
@@ -100,8 +100,6 @@ export class RoomManager {
 		if (oldRoomId) {
 			const oldRoom = this.rooms.get(oldRoomId);
 			if (oldRoom) {
-				await oldRoom.leave(newState.member);
-
 				// ルームが空になったら削除
 				const deleted = await oldRoom.delete();
 				if (deleted) {
