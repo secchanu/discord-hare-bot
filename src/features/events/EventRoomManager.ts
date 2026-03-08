@@ -80,7 +80,6 @@ export class EventRoomManager {
 		const deleted = await room.delete();
 
 		if (deleted) {
-			const { RoomStore } = await import("../rooms/RoomStore.js");
 			const roomStore = RoomStore.getInstance();
 			this.roomManager.getAll().delete(parentId);
 			await roomStore.delete(parentId);
@@ -106,8 +105,8 @@ export class EventRoomManager {
 			return;
 		}
 
-		// イベント完了時
-		if (newEvent.isCompleted()) {
+		// イベント完了またはキャンセル時
+		if (newEvent.isCompleted() || newEvent.isCanceled()) {
 			await this.deleteEventRoom(newEvent);
 			return;
 		}
