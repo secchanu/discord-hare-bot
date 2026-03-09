@@ -80,7 +80,9 @@ describe("EventRoomManager", () => {
 				setTextChannelVisibility: vi.fn().mockResolvedValue(undefined),
 				toData: vi.fn().mockReturnValue({ id: "category-id" }),
 			};
-			vi.mocked(Room).mockImplementation(() => mockRoom as never);
+			vi.mocked(Room).mockImplementation(function () {
+				return mockRoom;
+			} as never);
 
 			const event = {
 				channelId: "ready-channel-id",
@@ -106,7 +108,9 @@ describe("EventRoomManager", () => {
 				setTextChannelVisibility: vi.fn().mockResolvedValue(undefined),
 				toData: vi.fn().mockReturnValue({ id: "category-id" }),
 			};
-			vi.mocked(Room).mockImplementation(() => mockRoom as never);
+			vi.mocked(Room).mockImplementation(function () {
+				return mockRoom;
+			} as never);
 
 			const mockEdit = vi.fn().mockResolvedValue(undefined);
 			const event = {
@@ -133,7 +137,9 @@ describe("EventRoomManager", () => {
 				setTextChannelVisibility: mockSetVisibility,
 				toData: vi.fn().mockReturnValue({ id: "category-id" }),
 			};
-			vi.mocked(Room).mockImplementation(() => mockRoom as never);
+			vi.mocked(Room).mockImplementation(function () {
+				return mockRoom;
+			} as never);
 
 			const userA = { id: "user-a" };
 			const userB = { id: "user-b" };
@@ -167,7 +173,9 @@ describe("EventRoomManager", () => {
 				setTextChannelVisibility: vi.fn().mockResolvedValue(undefined),
 				toData: vi.fn().mockReturnValue(mockRoomData),
 			};
-			vi.mocked(Room).mockImplementation(() => mockRoom as never);
+			vi.mocked(Room).mockImplementation(function () {
+				return mockRoom;
+			} as never);
 
 			const event = {
 				channelId: "ready-channel-id",
@@ -296,7 +304,9 @@ describe("EventRoomManager", () => {
 				setTextChannelVisibility: vi.fn().mockResolvedValue(undefined),
 				toData: vi.fn().mockReturnValue({ id: "new-category-id" }),
 			};
-			vi.mocked(Room).mockImplementation(() => mockRoom as never);
+			vi.mocked(Room).mockImplementation(function () {
+				return mockRoom;
+			} as never);
 
 			const oldEvent = {
 				channelId: "other-channel-id",

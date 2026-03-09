@@ -51,7 +51,9 @@ describe("RoomManager.createRoom()", () => {
 			moveMembers: vi.fn().mockResolvedValue(true),
 			toData: vi.fn().mockReturnValue({ id: roomId } as unknown as RoomData),
 		};
-		vi.mocked(Room).mockImplementation(() => mockRoomInstance as unknown as Room);
+		vi.mocked(Room).mockImplementation(function () {
+			return mockRoomInstance;
+		} as never);
 
 		const manager = RoomManager.getInstance();
 
@@ -78,7 +80,9 @@ describe("RoomManager.createRoom()", () => {
 			moveMembers: vi.fn().mockResolvedValue(true),
 			toData: vi.fn().mockReturnValue({ id: roomId } as unknown as RoomData),
 		};
-		vi.mocked(Room).mockImplementation(() => mockRoomInstance as unknown as Room);
+		vi.mocked(Room).mockImplementation(function () {
+			return mockRoomInstance;
+		} as never);
 
 		const manager = RoomManager.getInstance();
 
@@ -103,7 +107,9 @@ describe("RoomManager.createRoom()", () => {
 			moveMembers: vi.fn(),
 			toData: vi.fn(),
 		};
-		vi.mocked(Room).mockImplementation(() => mockRoomInstance as unknown as Room);
+		vi.mocked(Room).mockImplementation(function () {
+			return mockRoomInstance;
+		} as never);
 
 		const manager = RoomManager.getInstance();
 
@@ -128,7 +134,9 @@ describe("RoomManager.createRoom()", () => {
 			moveMembers: vi.fn(),
 			toData: vi.fn(),
 		};
-		vi.mocked(Room).mockImplementation(() => mockRoomInstance as unknown as Room);
+		vi.mocked(Room).mockImplementation(function () {
+			return mockRoomInstance;
+		} as never);
 
 		const manager = RoomManager.getInstance();
 
