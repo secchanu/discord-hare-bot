@@ -24,52 +24,38 @@ describe("parseIgnoreRoles", () => {
 	});
 
 	it("コロンがない場合はnoteが空文字になる", () => {
-		expect(parseIgnoreRoles("123456789")).toEqual([
-			{ id: "123456789", note: "" },
-		]);
+		expect(parseIgnoreRoles("123456789")).toEqual([{ id: "123456789", note: "" }]);
 	});
 
 	it("id の前後の空白を除去する", () => {
-		expect(parseIgnoreRoles(" 123 :ノート")).toEqual([
-			{ id: "123", note: "ノート" },
-		]);
+		expect(parseIgnoreRoles(" 123 :ノート")).toEqual([{ id: "123", note: "ノート" }]);
 	});
 
 	it("note の前後の空白を除去する", () => {
-		expect(parseIgnoreRoles("123: ノート ")).toEqual([
-			{ id: "123", note: "ノート" },
-		]);
+		expect(parseIgnoreRoles("123: ノート ")).toEqual([{ id: "123", note: "ノート" }]);
 	});
 
 	it("IDが空の項目は除外される", () => {
-		expect(parseIgnoreRoles(":ノート,123:有効")).toEqual([
-			{ id: "123", note: "有効" },
-		]);
+		expect(parseIgnoreRoles(":ノート,123:有効")).toEqual([{ id: "123", note: "有効" }]);
 	});
 
 	it("noteにコロンが含まれる場合、最初のコロンで分割される", () => {
-		expect(parseIgnoreRoles("123:ノート:追記")).toEqual([
-			{ id: "123", note: "ノート:追記" },
-		]);
+		expect(parseIgnoreRoles("123:ノート:追記")).toEqual([{ id: "123", note: "ノート:追記" }]);
 	});
 });
 
 describe("validateConfig", () => {
-	// biome-ignore lint/suspicious/noExplicitAny: spyOnの戻り型を統一するためanyを使用
+	// oxlint-disable-next-line typescript/no-explicit-any -- spyOnの戻り型はvitest内部の型制約により統一不可
 	let exitSpy: any;
-	// biome-ignore lint/suspicious/noExplicitAny: spyOnの戻り型を統一するためanyを使用
+	// oxlint-disable-next-line typescript/no-explicit-any -- spyOnの戻り型はvitest内部の型制約により統一不可
 	let consoleErrorSpy: any;
 
 	beforeEach(() => {
 		// process.exit をモックしてテスト中断を防ぐ
-		exitSpy = vi
-			.spyOn(process, "exit")
-			.mockImplementation((_code?: string | number | null) => {
-				throw new Error(`process.exit called with code ${_code}`);
-			});
-		consoleErrorSpy = vi
-			.spyOn(console, "error")
-			.mockImplementation(() => undefined);
+		exitSpy = vi.spyOn(process, "exit").mockImplementation((_code?: string | number | null) => {
+			throw new Error(`process.exit called with code ${_code}`);
+		});
+		consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 	});
 
 	afterEach(() => {

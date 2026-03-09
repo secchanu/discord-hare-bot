@@ -47,9 +47,7 @@ export class RoomStore {
 	async getAll(): Promise<RoomData[]> {
 		try {
 			if (!this.store.iterator) {
-				console.warn(
-					"[RoomStore] Iterator not available, returning empty array",
-				);
+				console.warn("[RoomStore] Iterator not available, returning empty array");
 				return [];
 			}
 

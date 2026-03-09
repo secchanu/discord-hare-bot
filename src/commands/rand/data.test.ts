@@ -66,12 +66,8 @@ function makeInteraction(message: ReturnType<typeof makeMessage>) {
 describe("/rand data", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		vi.mocked(GameManager.getInstance).mockReturnValue(
-			mockGameManager as unknown as GameManager,
-		);
-		vi.mocked(RoomManager.getInstance).mockReturnValue(
-			mockRoomManager as unknown as RoomManager,
-		);
+		vi.mocked(GameManager.getInstance).mockReturnValue(mockGameManager as unknown as GameManager);
+		vi.mocked(RoomManager.getInstance).mockReturnValue(mockRoomManager as unknown as RoomManager);
 		mockRoomManager.get.mockReturnValue(mockRoom);
 	});
 
@@ -80,9 +76,7 @@ describe("/rand data", () => {
 		const message = makeMessage(null);
 		const interaction = makeInteraction(message);
 		await handleData(interaction);
-		expect(interaction.editReply).toHaveBeenCalledWith(
-			expect.stringContaining("ルーム内でのみ"),
-		);
+		expect(interaction.editReply).toHaveBeenCalledWith(expect.stringContaining("ルーム内でのみ"));
 	});
 
 	it("ゲームが未設定の場合は「ゲームが設定されていません」を返す", async () => {
@@ -173,7 +167,7 @@ describe("/rand data", () => {
 		}
 
 		it("reroll後: 新しいランダム値が表示される（同じボタン行）", async () => {
-			const { selectInteraction, getCollectHandler } = await setupWithData();
+			const { getCollectHandler } = await setupWithData();
 			const collectHandler = getCollectHandler();
 			expect(collectHandler).toBeDefined();
 

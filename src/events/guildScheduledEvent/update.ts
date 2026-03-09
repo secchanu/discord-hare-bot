@@ -1,8 +1,4 @@
-import type {
-	Client,
-	GuildScheduledEvent,
-	PartialGuildScheduledEvent,
-} from "discord.js";
+import type { Client, GuildScheduledEvent, PartialGuildScheduledEvent } from "discord.js";
 import { Events } from "discord.js";
 import { EventRoomManager } from "../../features/events/EventRoomManager";
 

@@ -11,9 +11,9 @@
 		"clean": "del-cli dist",
 		"dev": "tsx --env-file=.env src/index.ts",
 		"format": "run-s format:*",
-		"format:biome": "biome check --write",
+		"format:oxfmt": "oxfmt .",
 		"format:sort-package-json": "sort-package-json",
-		"lint": "biome check",
+		"lint": "oxlint",
 		"start": "node dist/index.js",
 		"test": "vitest run",
 		"typecheck": "tsc --noEmit"
@@ -24,12 +24,13 @@
 		"keyv": "^5.5.0"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "^2.2.2",
 		"@tsconfig/node-lts": "^22.0.2",
 		"@types/node": "^24.3.0",
 		"@vitest/ui": "^3.2.4",
 		"del-cli": "^6.0.0",
 		"npm-run-all2": "^8.0.4",
+		"oxfmt": "^0.36.0",
+		"oxlint": "^1.51.0",
 		"sort-package-json": "^3.4.0",
 		"tsx": "^4.20.5",
 		"typescript": "^5.9.2",

@@ -17,9 +17,7 @@ const mockStore = {
 
 describe("GameManager", () => {
 	beforeEach(() => {
-		vi.mocked(GameStore.getInstance).mockReturnValue(
-			mockStore as unknown as GameStore,
-		);
+		vi.mocked(GameStore.getInstance).mockReturnValue(mockStore as unknown as GameStore);
 		GameManager.resetInstance();
 		vi.clearAllMocks();
 	});

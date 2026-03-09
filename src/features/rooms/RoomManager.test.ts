@@ -43,9 +43,7 @@ describe("RoomManager.createRoom()", () => {
 
 	it("Room.create()を呼び、返ったIDでメモリとストアに保存する", async () => {
 		const mockStore = createMockStore();
-		vi.mocked(RoomStore.getInstance).mockReturnValue(
-			mockStore as unknown as RoomStore,
-		);
+		vi.mocked(RoomStore.getInstance).mockReturnValue(mockStore as unknown as RoomStore);
 
 		const roomId = "cat-001";
 		const mockRoomInstance = {
@@ -53,9 +51,7 @@ describe("RoomManager.createRoom()", () => {
 			moveMembers: vi.fn().mockResolvedValue(true),
 			toData: vi.fn().mockReturnValue({ id: roomId } as unknown as RoomData),
 		};
-		vi.mocked(Room).mockImplementation(
-			() => mockRoomInstance as unknown as Room,
-		);
+		vi.mocked(Room).mockImplementation(() => mockRoomInstance as unknown as Room);
 
 		const manager = RoomManager.getInstance();
 
@@ -74,9 +70,7 @@ describe("RoomManager.createRoom()", () => {
 
 	it("作成後にオーナーをルームのVCに移動する", async () => {
 		const mockStore = createMockStore();
-		vi.mocked(RoomStore.getInstance).mockReturnValue(
-			mockStore as unknown as RoomStore,
-		);
+		vi.mocked(RoomStore.getInstance).mockReturnValue(mockStore as unknown as RoomStore);
 
 		const roomId = "cat-002";
 		const mockRoomInstance = {
@@ -84,9 +78,7 @@ describe("RoomManager.createRoom()", () => {
 			moveMembers: vi.fn().mockResolvedValue(true),
 			toData: vi.fn().mockReturnValue({ id: roomId } as unknown as RoomData),
 		};
-		vi.mocked(Room).mockImplementation(
-			() => mockRoomInstance as unknown as Room,
-		);
+		vi.mocked(Room).mockImplementation(() => mockRoomInstance as unknown as Room);
 
 		const manager = RoomManager.getInstance();
 
@@ -104,18 +96,14 @@ describe("RoomManager.createRoom()", () => {
 
 	it("Room.create()が失敗したとき、メモリ・ストアには何も保存されない", async () => {
 		const mockStore = createMockStore();
-		vi.mocked(RoomStore.getInstance).mockReturnValue(
-			mockStore as unknown as RoomStore,
-		);
+		vi.mocked(RoomStore.getInstance).mockReturnValue(mockStore as unknown as RoomStore);
 
 		const mockRoomInstance = {
 			create: vi.fn().mockRejectedValue(new Error("チャンネル作成失敗")),
 			moveMembers: vi.fn(),
 			toData: vi.fn(),
 		};
-		vi.mocked(Room).mockImplementation(
-			() => mockRoomInstance as unknown as Room,
-		);
+		vi.mocked(Room).mockImplementation(() => mockRoomInstance as unknown as Room);
 
 		const manager = RoomManager.getInstance();
 
@@ -133,18 +121,14 @@ describe("RoomManager.createRoom()", () => {
 
 	it("newState.memberがnullの場合は何も処理しない", async () => {
 		const mockStore = createMockStore();
-		vi.mocked(RoomStore.getInstance).mockReturnValue(
-			mockStore as unknown as RoomStore,
-		);
+		vi.mocked(RoomStore.getInstance).mockReturnValue(mockStore as unknown as RoomStore);
 
 		const mockRoomInstance = {
 			create: vi.fn(),
 			moveMembers: vi.fn(),
 			toData: vi.fn(),
 		};
-		vi.mocked(Room).mockImplementation(
-			() => mockRoomInstance as unknown as Room,
-		);
+		vi.mocked(Room).mockImplementation(() => mockRoomInstance as unknown as Room);
 
 		const manager = RoomManager.getInstance();
 
@@ -168,9 +152,7 @@ describe("RoomManager.handleMemberMove()", () => {
 
 	it("同じカテゴリ内での移動（例：VC1→VC2）は何も処理しない", async () => {
 		const mockStore = createMockStore();
-		vi.mocked(RoomStore.getInstance).mockReturnValue(
-			mockStore as unknown as RoomStore,
-		);
+		vi.mocked(RoomStore.getInstance).mockReturnValue(mockStore as unknown as RoomStore);
 
 		const manager = RoomManager.getInstance();
 
@@ -200,9 +182,7 @@ describe("RoomManager.handleMemberMove()", () => {
 
 	it("新しいルームに入ったとき、そのルームのテキストチャンネルを閲覧可能にする", async () => {
 		const mockStore = createMockStore();
-		vi.mocked(RoomStore.getInstance).mockReturnValue(
-			mockStore as unknown as RoomStore,
-		);
+		vi.mocked(RoomStore.getInstance).mockReturnValue(mockStore as unknown as RoomStore);
 
 		const manager = RoomManager.getInstance();
 		const member = { id: "user-1" };
@@ -225,17 +205,12 @@ describe("RoomManager.handleMemberMove()", () => {
 
 		await manager.handleMemberMove(oldState, newState);
 
-		expect(mockNewRoom.setTextChannelVisibility).toHaveBeenCalledWith(
-			member,
-			true,
-		);
+		expect(mockNewRoom.setTextChannelVisibility).toHaveBeenCalledWith(member, true);
 	});
 
 	it("古いルームから出たとき、ルームが空なら削除してストアからも除去する", async () => {
 		const mockStore = createMockStore();
-		vi.mocked(RoomStore.getInstance).mockReturnValue(
-			mockStore as unknown as RoomStore,
-		);
+		vi.mocked(RoomStore.getInstance).mockReturnValue(mockStore as unknown as RoomStore);
 
 		const manager = RoomManager.getInstance();
 		const member = { id: "user-1" };
@@ -266,9 +241,7 @@ describe("RoomManager.handleMemberMove()", () => {
 
 	it("古いルームから出たが、まだメンバーがいる場合は削除しない", async () => {
 		const mockStore = createMockStore();
-		vi.mocked(RoomStore.getInstance).mockReturnValue(
-			mockStore as unknown as RoomStore,
-		);
+		vi.mocked(RoomStore.getInstance).mockReturnValue(mockStore as unknown as RoomStore);
 
 		const manager = RoomManager.getInstance();
 		const member = { id: "user-1" };
@@ -339,9 +312,7 @@ describe("RoomManager.recoverRooms()", () => {
 		};
 
 		mockStore.getAll.mockResolvedValue([roomData1, roomData2]);
-		vi.mocked(RoomStore.getInstance).mockReturnValue(
-			mockStore as unknown as RoomStore,
-		);
+		vi.mocked(RoomStore.getInstance).mockReturnValue(mockStore as unknown as RoomStore);
 
 		const mockRoomInstance1 = {} as unknown as Room;
 		const mockRoomInstance2 = {} as unknown as Room;
@@ -414,9 +385,7 @@ describe("RoomManager.recoverRooms()", () => {
 
 		// 失敗データを先に並べてもOKなケースも引き続き処理されることを確認
 		mockStore.getAll.mockResolvedValue([roomDataFail, roomDataOk]);
-		vi.mocked(RoomStore.getInstance).mockReturnValue(
-			mockStore as unknown as RoomStore,
-		);
+		vi.mocked(RoomStore.getInstance).mockReturnValue(mockStore as unknown as RoomStore);
 
 		const mockRoomInstanceOk = {} as unknown as Room;
 

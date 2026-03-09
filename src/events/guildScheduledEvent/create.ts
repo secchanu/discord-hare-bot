@@ -7,11 +7,8 @@ import { EventRoomManager } from "../../features/events/EventRoomManager";
  * Discord.js の GuildScheduledEventCreate イベントハンドラー
  */
 export const setupGuildScheduledEventCreateHandler = (client: Client): void => {
-	client.on(
-		Events.GuildScheduledEventCreate,
-		async (event: GuildScheduledEvent) => {
-			const eventManager = EventRoomManager.getInstance();
-			await eventManager.createEventRoom(event);
-		},
-	);
+	client.on(Events.GuildScheduledEventCreate, async (event: GuildScheduledEvent) => {
+		const eventManager = EventRoomManager.getInstance();
+		await eventManager.createEventRoom(event);
+	});
 };

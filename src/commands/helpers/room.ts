@@ -6,9 +6,7 @@ import { hasRoleManager } from "../../types/guards";
 /**
  * ルーム内のボイスチャンネルに接続しているかチェック
  */
-export function getRoomFromVoiceChannel(
-	interaction: ChatInputCommandInteraction,
-): Room | null {
+export function getRoomFromVoiceChannel(interaction: ChatInputCommandInteraction): Room | null {
 	if (
 		!interaction.member ||
 		!hasRoleManager(interaction.member) ||
@@ -25,9 +23,7 @@ export function getRoomFromVoiceChannel(
 /**
  * ルーム内のテキストチャンネルから実行されているかチェック
  */
-export function getRoomFromTextChannel(
-	interaction: ChatInputCommandInteraction,
-): Room | null {
+export function getRoomFromTextChannel(interaction: ChatInputCommandInteraction): Room | null {
 	if (
 		!interaction.channel ||
 		!("parentId" in interaction.channel) ||

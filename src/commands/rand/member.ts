@@ -5,9 +5,7 @@ import { isGuildInteraction } from "../helpers";
  * /rand member サブコマンド
  * VCメンバーからランダム選択
  */
-export async function handleMember(
-	interaction: ChatInputCommandInteraction,
-): Promise<void> {
+export async function handleMember(interaction: ChatInputCommandInteraction): Promise<void> {
 	await interaction.deferReply();
 
 	if (!isGuildInteraction(interaction)) {

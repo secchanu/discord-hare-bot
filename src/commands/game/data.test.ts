@@ -1,6 +1,5 @@
 import type { ChatInputCommandInteraction } from "discord.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { config } from "../../bot/config";
 import { GameManager } from "../../features/games/GameManager";
 import { handleData } from "./data";
 
@@ -30,22 +29,22 @@ const mockGameManager = {
 
 const EVERYONE_ROLE_ID = "everyone-role-id";
 
-function makeModalInteraction(overrides: {
-	key?: string;
-	data?: string;
-	userId?: string;
-	customId?: string;
-} = {}) {
+function makeModalInteraction(
+	overrides: {
+		key?: string;
+		data?: string;
+		userId?: string;
+		customId?: string;
+	} = {},
+) {
 	return {
 		deferUpdate: vi.fn().mockResolvedValue(undefined),
 		fields: {
-			getTextInputValue: vi
-				.fn()
-				.mockImplementation((field: string) => {
-					if (field === "key") return overrides.key ?? "newKey";
-					if (field === "data") return overrides.data ?? "item1\nitem2";
-					return "";
-				}),
+			getTextInputValue: vi.fn().mockImplementation((field: string) => {
+				if (field === "key") return overrides.key ?? "newKey";
+				if (field === "data") return overrides.data ?? "item1\nitem2";
+				return "";
+			}),
 		},
 		user: { id: overrides.userId ?? "user-id" },
 		customId: overrides.customId ?? "game_data_msg-id",
@@ -72,18 +71,15 @@ function makeMessage(
 	};
 }
 
-function makeInteraction(overrides: {
-	roleId?: string;
-	hasRole?: boolean;
-	inCachedGuild?: boolean;
-	message?: ReturnType<typeof makeMessage>;
-} = {}) {
-	const {
-		roleId = "game-role-id",
-		hasRole = true,
-		inCachedGuild = true,
-		message,
-	} = overrides;
+function makeInteraction(
+	overrides: {
+		roleId?: string;
+		hasRole?: boolean;
+		inCachedGuild?: boolean;
+		message?: ReturnType<typeof makeMessage>;
+	} = {},
+) {
+	const { roleId = "game-role-id", hasRole = true, inCachedGuild = true, message } = overrides;
 
 	const msg = message ?? makeMessage(makeSelectInteraction("新規作成"));
 
@@ -117,9 +113,7 @@ function makeInteraction(overrides: {
 describe("/game data", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		vi.mocked(GameManager.getInstance).mockReturnValue(
-			mockGameManager as unknown as GameManager,
-		);
+		vi.mocked(GameManager.getInstance).mockReturnValue(mockGameManager as unknown as GameManager);
 		mockGameManager.updateGameData.mockResolvedValue(undefined);
 	});
 
@@ -128,18 +122,14 @@ describe("/game data", () => {
 			const interaction = makeInteraction({ roleId: EVERYONE_ROLE_ID });
 			mockGameManager.getGame.mockResolvedValue(null);
 			await handleData(interaction);
-			expect(interaction.editReply).toHaveBeenCalledWith(
-				expect.stringContaining("選択できません"),
-			);
+			expect(interaction.editReply).toHaveBeenCalledWith(expect.stringContaining("選択できません"));
 			expect(mockGameManager.getGame).not.toHaveBeenCalled();
 		});
 
 		it("ignoreRoleIds に含まれるロールは「選択できません」を返す", async () => {
 			const interaction = makeInteraction({ roleId: "ignore-role-id" });
 			await handleData(interaction);
-			expect(interaction.editReply).toHaveBeenCalledWith(
-				expect.stringContaining("選択できません"),
-			);
+			expect(interaction.editReply).toHaveBeenCalledWith(expect.stringContaining("選択できません"));
 			expect(mockGameManager.getGame).not.toHaveBeenCalled();
 		});
 
@@ -155,9 +145,7 @@ describe("/game data", () => {
 		it("ギルド外から実行した場合はエラーを返す", async () => {
 			const interaction = makeInteraction({ inCachedGuild: false });
 			await handleData(interaction);
-			expect(interaction.reply).toHaveBeenCalledWith(
-				expect.objectContaining({ ephemeral: true }),
-			);
+			expect(interaction.reply).toHaveBeenCalledWith(expect.objectContaining({ ephemeral: true }));
 			expect(interaction.deferReply).not.toHaveBeenCalled();
 		});
 	});
@@ -186,11 +174,10 @@ describe("/game data", () => {
 
 			await handleData(interaction);
 
-			expect(mockGameManager.updateGameData).toHaveBeenCalledWith(
-				"game-role-id",
-				"マップ",
-				["マップA", "マップB"],
-			);
+			expect(mockGameManager.updateGameData).toHaveBeenCalledWith("game-role-id", "マップ", [
+				"マップA",
+				"マップB",
+			]);
 		});
 
 		it("データが空（空行のみ）の場合はキーを削除する", async () => {
@@ -209,11 +196,7 @@ describe("/game data", () => {
 			await handleData(interaction);
 
 			// 削除処理: 古いキーをnullで更新
-			expect(mockGameManager.updateGameData).toHaveBeenCalledWith(
-				"game-role-id",
-				"マップ",
-				null,
-			);
+			expect(mockGameManager.updateGameData).toHaveBeenCalledWith("game-role-id", "マップ", null);
 		});
 
 		it("キー名変更時: 旧キー削除 → 新キーで作成の2ステップになる", async () => {
@@ -232,17 +215,12 @@ describe("/game data", () => {
 			await handleData(interaction);
 
 			// 旧キーを削除
-			expect(mockGameManager.updateGameData).toHaveBeenCalledWith(
-				"game-role-id",
-				"旧キー",
-				null,
-			);
+			expect(mockGameManager.updateGameData).toHaveBeenCalledWith("game-role-id", "旧キー", null);
 			// 新キーで作成
-			expect(mockGameManager.updateGameData).toHaveBeenCalledWith(
-				"game-role-id",
-				"新キー",
-				["item1", "item2"],
-			);
+			expect(mockGameManager.updateGameData).toHaveBeenCalledWith("game-role-id", "新キー", [
+				"item1",
+				"item2",
+			]);
 		});
 	});
 

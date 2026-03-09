@@ -154,8 +154,11 @@ describe("/team（UI状態分岐）", () => {
 	 * 共通のセットアップ: 4人メンバー、ルームあり
 	 */
 	async function setupTeamCommand(teamNumber = 2) {
-		const { mockInteraction, mockCollector, mockMessage, getCollectHandler } =
-			setupInteraction(["1", "2", "3", "4"], teamNumber, createMockRoom());
+		const { mockInteraction, mockCollector, mockMessage, getCollectHandler } = setupInteraction(
+			["1", "2", "3", "4"],
+			teamNumber,
+			createMockRoom(),
+		);
 
 		await teamCommand.execute(mockInteraction as never);
 
@@ -177,9 +180,7 @@ describe("/team（UI状態分岐）", () => {
 		expect(editReplyCall.content).toContain("チーム1");
 		expect(editReplyCall.content).toContain("チーム2");
 
-		const buttonIds = editReplyCall.components[0].components.map(
-			(c) => c.data.custom_id,
-		);
+		const buttonIds = editReplyCall.components[0].components.map((c) => c.data.custom_id);
 		expect(buttonIds).toContain("cancel");
 		expect(buttonIds).toContain("confirm");
 		expect(buttonIds).toContain("reroll");
@@ -207,9 +208,7 @@ describe("/team（UI状態分岐）", () => {
 		expect(updateArgs.content).toContain("チーム1");
 		expect(updateArgs.content).toContain("チーム2");
 
-		const buttonIds = updateArgs.components[0].components.map(
-			(c) => c.data.custom_id,
-		);
+		const buttonIds = updateArgs.components[0].components.map((c) => c.data.custom_id);
 		expect(buttonIds).toContain("cancel");
 		expect(buttonIds).toContain("confirm");
 		expect(buttonIds).toContain("reroll");
@@ -233,9 +232,7 @@ describe("/team（UI状態分岐）", () => {
 			components: Array<{ components: Array<{ data: { custom_id: string } }> }>;
 		};
 
-		const buttonIds = updateArgs.components[0].components.map(
-			(c) => c.data.custom_id,
-		);
+		const buttonIds = updateArgs.components[0].components.map((c) => c.data.custom_id);
 		expect(buttonIds).toContain("move");
 		expect(buttonIds).not.toContain("cancel");
 		expect(buttonIds).not.toContain("confirm");
@@ -268,9 +265,7 @@ describe("/team（UI状態分岐）", () => {
 		expect(editReplyArgs.content).toContain("チーム2");
 
 		// moveボタンのみ
-		const buttonIds = editReplyArgs.components[0].components.map(
-			(c) => c.data.custom_id,
-		);
+		const buttonIds = editReplyArgs.components[0].components.map((c) => c.data.custom_id);
 		expect(buttonIds).toContain("move");
 		expect(buttonIds).not.toContain("cancel");
 		expect(buttonIds).not.toContain("confirm");
@@ -278,8 +273,7 @@ describe("/team（UI状態分岐）", () => {
 	});
 
 	it("cancel後: リプライが削除される", async () => {
-		const { mockInteraction, mockCollector, getCollectHandler } =
-			await setupTeamCommand();
+		const { mockInteraction, mockCollector, getCollectHandler } = await setupTeamCommand();
 
 		const cancelButtonInteraction = {
 			customId: "cancel",

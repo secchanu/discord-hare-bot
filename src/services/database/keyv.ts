@@ -34,9 +34,7 @@ export function createKeyvStore<T>(filename: string): Keyv<T> {
 		return new Keyv<T>(keyvSqlite);
 	} catch (error) {
 		const errorMessage = error instanceof Error ? error.message : String(error);
-		console.error(
-			`[Database] Failed to create Keyv store for ${filename}: ${errorMessage}`,
-		);
+		console.error(`[Database] Failed to create Keyv store for ${filename}: ${errorMessage}`);
 		console.error(
 			"[Database] Ensure the application has write permissions and sufficient disk space",
 		);

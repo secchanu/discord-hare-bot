@@ -14,9 +14,7 @@ import { getRoomFromTextChannel } from "../helpers/room";
  * /rand data サブコマンド
  * ゲームデータからランダム選択
  */
-export async function handleData(
-	interaction: ChatInputCommandInteraction,
-): Promise<void> {
+export async function handleData(interaction: ChatInputCommandInteraction): Promise<void> {
 	await interaction.deferReply();
 
 	const room = getRoomFromTextChannel(interaction);
@@ -53,8 +51,7 @@ export async function handleData(
 			})),
 		);
 
-	const selectRow =
-		new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu);
+	const selectRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu);
 
 	const message = await interaction.editReply({
 		content: "抽選するデータを選択してください",
@@ -96,18 +93,9 @@ export async function handleData(
 
 	// アクションボタン
 	const actionRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-		new ButtonBuilder()
-			.setCustomId("cancel")
-			.setLabel("キャンセル")
-			.setStyle(ButtonStyle.Danger),
-		new ButtonBuilder()
-			.setCustomId("confirm")
-			.setLabel("確定")
-			.setStyle(ButtonStyle.Success),
-		new ButtonBuilder()
-			.setCustomId("reroll")
-			.setLabel("再抽選")
-			.setStyle(ButtonStyle.Primary),
+		new ButtonBuilder().setCustomId("cancel").setLabel("キャンセル").setStyle(ButtonStyle.Danger),
+		new ButtonBuilder().setCustomId("confirm").setLabel("確定").setStyle(ButtonStyle.Success),
+		new ButtonBuilder().setCustomId("reroll").setLabel("再抽選").setStyle(ButtonStyle.Primary),
 	);
 
 	await selectInteraction.editReply({
@@ -119,8 +107,7 @@ export async function handleData(
 	const collector = message.createMessageComponentCollector({
 		componentType: ComponentType.Button,
 		filter: (i) =>
-			i.user.id === interaction.user.id &&
-			["cancel", "confirm", "reroll"].includes(i.customId),
+			i.user.id === interaction.user.id && ["cancel", "confirm", "reroll"].includes(i.customId),
 	});
 
 	collector.on("collect", async (buttonInteraction) => {

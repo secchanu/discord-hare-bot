@@ -1,8 +1,4 @@
-import type {
-	GuildScheduledEvent,
-	PartialGuildScheduledEvent,
-	User,
-} from "discord.js";
+import type { GuildScheduledEvent, PartialGuildScheduledEvent, User } from "discord.js";
 import { config } from "../../bot/config";
 import { Room } from "../rooms/Room";
 import { RoomManager } from "../rooms/RoomManager";
@@ -52,9 +48,7 @@ export class EventRoomManager {
 
 			// イベント参加者を追加
 			const subscribers = await event.fetchSubscribers();
-			await Promise.all(
-				subscribers.map((sub) => room.setTextChannelVisibility(sub.user, true)),
-			);
+			await Promise.all(subscribers.map((sub) => room.setTextChannelVisibility(sub.user, true)));
 
 			// 保存
 			this.roomManager.getAll().set(roomId, room);
@@ -67,9 +61,7 @@ export class EventRoomManager {
 	/**
 	 * イベントルームを削除
 	 */
-	async deleteEventRoom(
-		event: GuildScheduledEvent | PartialGuildScheduledEvent,
-	): Promise<void> {
+	async deleteEventRoom(event: GuildScheduledEvent | PartialGuildScheduledEvent): Promise<void> {
 		const parentId = event.channel?.parentId;
 		if (!parentId) return;
 

@@ -1,6 +1,5 @@
 import type { ChatInputCommandInteraction } from "discord.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { config } from "../../bot/config";
 import { RoomManager } from "../../features/rooms/RoomManager";
 import { RoomStore } from "../../features/rooms/RoomStore";
 import { handleGame } from "./game";
@@ -69,12 +68,8 @@ function makeInteraction(overrides: Record<string, unknown> = {}): ChatInputComm
 describe("/room game", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		vi.mocked(RoomManager.getInstance).mockReturnValue(
-			mockRoomManager as unknown as RoomManager,
-		);
-		vi.mocked(RoomStore.getInstance).mockReturnValue(
-			mockRoomStore as unknown as RoomStore,
-		);
+		vi.mocked(RoomManager.getInstance).mockReturnValue(mockRoomManager as unknown as RoomManager);
+		vi.mocked(RoomStore.getInstance).mockReturnValue(mockRoomStore as unknown as RoomStore);
 		mockRoomManager.get.mockReturnValue(mockRoom);
 		mockRoom.setGame.mockResolvedValue({ id: "game-role-id", name: "ゲームA", data: {} });
 	});
@@ -85,9 +80,7 @@ describe("/room game", () => {
 			channel: null,
 		});
 		await handleGame(interaction);
-		expect(interaction.reply).toHaveBeenCalledWith(
-			expect.objectContaining({ ephemeral: true }),
-		);
+		expect(interaction.reply).toHaveBeenCalledWith(expect.objectContaining({ ephemeral: true }));
 		expect(interaction.deferReply).not.toHaveBeenCalled();
 	});
 
@@ -95,9 +88,7 @@ describe("/room game", () => {
 		mockRoomManager.get.mockReturnValue(undefined);
 		const interaction = makeInteraction();
 		await handleGame(interaction);
-		expect(interaction.editReply).toHaveBeenCalledWith(
-			expect.stringContaining("ルーム内でのみ"),
-		);
+		expect(interaction.editReply).toHaveBeenCalledWith(expect.stringContaining("ルーム内でのみ"));
 	});
 
 	it("ignoreRoleIds に含まれるロールは「選択できません」を返す", async () => {
@@ -107,9 +98,7 @@ describe("/room game", () => {
 			},
 		});
 		await handleGame(interaction);
-		expect(interaction.editReply).toHaveBeenCalledWith(
-			expect.stringContaining("選択できません"),
-		);
+		expect(interaction.editReply).toHaveBeenCalledWith(expect.stringContaining("選択できません"));
 		expect(mockRoom.setGame).not.toHaveBeenCalled();
 	});
 
@@ -124,9 +113,7 @@ describe("/room game", () => {
 			},
 		});
 		await handleGame(interaction);
-		expect(interaction.editReply).toHaveBeenCalledWith(
-			expect.stringContaining("付与されていない"),
-		);
+		expect(interaction.editReply).toHaveBeenCalledWith(expect.stringContaining("付与されていない"));
 		expect(mockRoom.setGame).not.toHaveBeenCalled();
 	});
 
@@ -134,9 +121,7 @@ describe("/room game", () => {
 		mockRoom.setGame.mockResolvedValue(null);
 		const interaction = makeInteraction();
 		await handleGame(interaction);
-		expect(interaction.editReply).toHaveBeenCalledWith(
-			expect.stringContaining("選択できません"),
-		);
+		expect(interaction.editReply).toHaveBeenCalledWith(expect.stringContaining("選択できません"));
 	});
 
 	it("正常にゲームを変更した場合は変更後のゲーム名を含むメッセージを返す", async () => {
@@ -144,8 +129,6 @@ describe("/room game", () => {
 		await handleGame(interaction);
 		expect(mockRoom.setGame).toHaveBeenCalledWith("game-role-id");
 		expect(mockRoomStore.set).toHaveBeenCalledWith("category-id", expect.anything());
-		expect(interaction.editReply).toHaveBeenCalledWith(
-			expect.stringContaining("ゲームA"),
-		);
+		expect(interaction.editReply).toHaveBeenCalledWith(expect.stringContaining("ゲームA"));
 	});
 });

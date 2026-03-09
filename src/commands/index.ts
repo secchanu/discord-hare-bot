@@ -34,9 +34,7 @@ export async function registerCommands(client: Client): Promise<void> {
 /**
  * コマンドを実行
  */
-export async function handleCommand(
-	interaction: ChatInputCommandInteraction,
-): Promise<void> {
+export async function handleCommand(interaction: ChatInputCommandInteraction): Promise<void> {
 	const command = commands.get(interaction.commandName);
 
 	if (!command) {

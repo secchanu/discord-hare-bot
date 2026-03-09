@@ -19,9 +19,7 @@ import { isGuildInteraction } from "../helpers";
  * /game data サブコマンド
  * ゲームデータの編集
  */
-export async function handleData(
-	interaction: ChatInputCommandInteraction,
-): Promise<void> {
+export async function handleData(interaction: ChatInputCommandInteraction): Promise<void> {
 	if (!isGuildInteraction(interaction)) {
 		await interaction.reply({
 			content: "このコマンドはサーバー内でのみ使用できます。",
@@ -43,10 +41,7 @@ export async function handleData(
 	}
 
 	// メンバーがロールを持っているかチェック
-	if (
-		!hasRoleManager(interaction.member) ||
-		!interaction.member.roles.cache.has(roleId)
-	) {
+	if (!hasRoleManager(interaction.member) || !interaction.member.roles.cache.has(roleId)) {
 		await interaction.editReply(
 			"このゲームは付与されていないため選択できません\n先に<id:customize>からプレイするゲームとして選択してください",
 		);
@@ -74,8 +69,7 @@ export async function handleData(
 		.setPlaceholder("データ")
 		.addOptions(options);
 
-	const selectRow =
-		new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu);
+	const selectRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu);
 
 	const message = await interaction.editReply({
 		content: `${game.name}: 編集するデータを選択してください`,
@@ -131,9 +125,7 @@ export async function handleData(
 	// モーダル送信を待つ
 	const modalInteraction = await selectInteraction
 		.awaitModalSubmit({
-			filter: (i) =>
-				i.user.id === interaction.user.id &&
-				i.customId === modal.data.custom_id,
+			filter: (i) => i.user.id === interaction.user.id && i.customId === modal.data.custom_id,
 			time: TIMEOUT.MODAL_SUBMIT,
 		})
 		.catch(() => null);

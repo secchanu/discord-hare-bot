@@ -36,24 +36,16 @@ function resetEventRoomManagerInstance() {
 
 describe("EventRoomManager", () => {
 	beforeEach(() => {
-		vi.mocked(RoomManager.getInstance).mockReturnValue(
-			mockRoomManager as unknown as RoomManager,
-		);
-		vi.mocked(RoomStore.getInstance).mockReturnValue(
-			mockRoomStore as unknown as RoomStore,
-		);
+		vi.mocked(RoomManager.getInstance).mockReturnValue(mockRoomManager as unknown as RoomManager);
+		vi.mocked(RoomStore.getInstance).mockReturnValue(mockRoomStore as unknown as RoomStore);
 		resetEventRoomManagerInstance();
 		mockRooms.clear();
 		vi.clearAllMocks();
 		// clearAllMocks後もgetAll/getの実装を維持する
 		mockRoomManager.get.mockImplementation((id: string) => mockRooms.get(id));
 		mockRoomManager.getAll.mockImplementation(() => mockRooms);
-		vi.mocked(RoomManager.getInstance).mockReturnValue(
-			mockRoomManager as unknown as RoomManager,
-		);
-		vi.mocked(RoomStore.getInstance).mockReturnValue(
-			mockRoomStore as unknown as RoomStore,
-		);
+		vi.mocked(RoomManager.getInstance).mockReturnValue(mockRoomManager as unknown as RoomManager);
+		vi.mocked(RoomStore.getInstance).mockReturnValue(mockRoomStore as unknown as RoomStore);
 	});
 
 	describe("createEventRoom()", () => {
@@ -103,10 +95,7 @@ describe("EventRoomManager", () => {
 			const manager = EventRoomManager.getInstance();
 			await manager.createEventRoom(event as never);
 
-			expect(Room).toHaveBeenCalledWith(
-				event.guild,
-				expect.objectContaining({ reserved: true }),
-			);
+			expect(Room).toHaveBeenCalledWith(event.guild, expect.objectContaining({ reserved: true }));
 		});
 
 		it("作成後にイベントのVCがルームのVCに更新される", async () => {

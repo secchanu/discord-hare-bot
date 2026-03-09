@@ -1,8 +1,4 @@
-import type {
-	ChatInputCommandInteraction,
-	GuildMember,
-	GuildTextBasedChannel,
-} from "discord.js";
+import type { ChatInputCommandInteraction, GuildMember, GuildTextBasedChannel } from "discord.js";
 
 /**
  * コマンドヘルパー関数

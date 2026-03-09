@@ -46,12 +46,8 @@ function makeInteraction(numberOption: number | null = 1): ChatInputCommandInter
 describe("/room vc", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		vi.mocked(RoomManager.getInstance).mockReturnValue(
-			mockRoomManager as unknown as RoomManager,
-		);
-		vi.mocked(RoomStore.getInstance).mockReturnValue(
-			mockRoomStore as unknown as RoomStore,
-		);
+		vi.mocked(RoomManager.getInstance).mockReturnValue(mockRoomManager as unknown as RoomManager);
+		vi.mocked(RoomStore.getInstance).mockReturnValue(mockRoomStore as unknown as RoomStore);
 		mockRoomManager.get.mockReturnValue(mockRoom);
 		mockRoom.setAdditionalVoiceChannels.mockResolvedValue(undefined);
 	});
@@ -60,9 +56,7 @@ describe("/room vc", () => {
 		mockRoomManager.get.mockReturnValue(undefined);
 		const interaction = makeInteraction(1);
 		await handleVc(interaction);
-		expect(interaction.editReply).toHaveBeenCalledWith(
-			expect.stringContaining("ルーム内でのみ"),
-		);
+		expect(interaction.editReply).toHaveBeenCalledWith(expect.stringContaining("ルーム内でのみ"));
 		expect(mockRoom.setAdditionalVoiceChannels).not.toHaveBeenCalled();
 	});
 
@@ -71,9 +65,7 @@ describe("/room vc", () => {
 			const interaction = makeInteraction(0);
 			await handleVc(interaction);
 			expect(mockRoom.setAdditionalVoiceChannels).toHaveBeenCalledWith(0);
-			expect(interaction.editReply).toHaveBeenCalledWith(
-				expect.stringContaining("0"),
-			);
+			expect(interaction.editReply).toHaveBeenCalledWith(expect.stringContaining("0"));
 		});
 
 		it("MAX を指定したとき、MAX がそのまま渡される", async () => {
@@ -104,17 +96,13 @@ describe("/room vc", () => {
 		await handleVc(interaction);
 		expect(mockRoom.setAdditionalVoiceChannels).toHaveBeenCalledWith(3);
 		expect(mockRoomStore.set).toHaveBeenCalledWith("category-id", expect.anything());
-		expect(interaction.editReply).toHaveBeenLastCalledWith(
-			expect.stringContaining("3"),
-		);
+		expect(interaction.editReply).toHaveBeenLastCalledWith(expect.stringContaining("3"));
 	});
 
 	it("setAdditionalVoiceChannels がエラーをスローした場合はエラーメッセージを返す", async () => {
 		mockRoom.setAdditionalVoiceChannels.mockRejectedValue(new Error("Discord API error"));
 		const interaction = makeInteraction(2);
 		await handleVc(interaction);
-		expect(interaction.editReply).toHaveBeenLastCalledWith(
-			expect.stringContaining("エラー"),
-		);
+		expect(interaction.editReply).toHaveBeenLastCalledWith(expect.stringContaining("エラー"));
 	});
 });

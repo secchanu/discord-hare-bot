@@ -1,9 +1,4 @@
-import {
-	type Client,
-	Collection,
-	type Snowflake,
-	type VoiceState,
-} from "discord.js";
+import { type Client, Collection, type Snowflake, type VoiceState } from "discord.js";
 import { Room } from "./Room";
 import { RoomStore } from "./RoomStore";
 import type { RoomData } from "./types";
@@ -50,8 +45,7 @@ export class RoomManager {
 
 		const guild = newState.guild;
 		const owner = newState.member;
-		const position =
-			newState.channel.parent?.rawPosition ?? newState.channel.rawPosition;
+		const position = newState.channel.parent?.rawPosition ?? newState.channel.rawPosition;
 
 		const room = new Room(guild, {
 			hostname: owner.displayName,
@@ -78,10 +72,7 @@ export class RoomManager {
 	/**
 	 * メンバーの移動を処理
 	 */
-	async handleMemberMove(
-		oldState: VoiceState,
-		newState: VoiceState,
-	): Promise<void> {
+	async handleMemberMove(oldState: VoiceState, newState: VoiceState): Promise<void> {
 		const oldRoomId = oldState.channel?.parentId;
 		const newRoomId = newState.channel?.parentId;
 
@@ -126,10 +117,7 @@ export class RoomManager {
 					await this.recoverSingleRoom(client, roomData);
 					recoveredCount++;
 				} catch (error) {
-					console.error(
-						`[RoomManager] Failed to recover room ${roomData.id}:`,
-						error,
-					);
+					console.error(`[RoomManager] Failed to recover room ${roomData.id}:`, error);
 					failedCount++;
 					// 復旧できないルームは削除
 					await this.store.delete(roomData.id);
@@ -147,10 +135,7 @@ export class RoomManager {
 	/**
 	 * 単一ルームの復旧
 	 */
-	private async recoverSingleRoom(
-		client: Client,
-		roomData: RoomData,
-	): Promise<void> {
+	private async recoverSingleRoom(client: Client, roomData: RoomData): Promise<void> {
 		// ギルドを取得
 		const guild = client.guilds.cache.get(roomData.guildId);
 		if (!guild) {

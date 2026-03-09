@@ -123,10 +123,7 @@ export class Room {
 	 * 現在参加しているメンバー（Botを除く）
 	 */
 	get members(): Collection<Snowflake, GuildMember> {
-		const voiceChannels = [
-			this.voiceChannelId,
-			...this.additionalVoiceChannelIds,
-		]
+		const voiceChannels = [this.voiceChannelId, ...this.additionalVoiceChannelIds]
 			.filter((id): id is Snowflake => Boolean(id))
 			.map((id) => this.channelManager.resolve(id))
 			.filter((ch): ch is VoiceBasedChannel => Boolean(ch?.isVoiceBased()));
@@ -134,9 +131,7 @@ export class Room {
 		const collection = new Collection<Snowflake, GuildMember>();
 		if (!voiceChannels.length) return collection;
 
-		const members = collection.concat(
-			...voiceChannels.flatMap((vc) => vc.members),
-		);
+		const members = collection.concat(...voiceChannels.flatMap((vc) => vc.members));
 		return members.filter((member) => !member.user.bot);
 	}
 
@@ -223,10 +218,7 @@ export class Room {
 	 * @param member 対象メンバー
 	 * @param visible true: 閲覧可能にする、false: 閲覧不可にする
 	 */
-	async setTextChannelVisibility(
-		member: GuildMemberResolvable,
-		visible: boolean,
-	): Promise<void> {
+	async setTextChannelVisibility(member: GuildMemberResolvable, visible: boolean): Promise<void> {
 		if (!this.textChannelId) return;
 		const textChannel = this.channelManager.resolve(this.textChannelId);
 		if (!textChannel || textChannel.type !== ChannelType.GuildText) return;
@@ -321,9 +313,7 @@ export class Room {
 	 * 全メンバーを集合
 	 */
 	async callMembers(index = 0): Promise<void> {
-		await Promise.all(
-			this.members.map((member) => this.moveMembers(member.voice, index)),
-		);
+		await Promise.all(this.members.map((member) => this.moveMembers(member.voice, index)));
 	}
 
 	/**
@@ -370,16 +360,14 @@ export class Room {
 
 		// 過去メッセージから最新の募集を検索
 		const messages = wantedChannel.messages.cache.filter(
-			(msg: Message) =>
-				msg.author.id === member.id && msg.mentions.roles.size > 0,
+			(msg: Message) => msg.author.id === member.id && msg.mentions.roles.size > 0,
 		);
 
 		const lastMessage = messages.last();
 		if (!lastMessage) return;
 
 		// タイムアウトチェック
-		const messageAge =
-			Date.now() - (lastMessage.editedAt ?? lastMessage.createdAt).getTime();
+		const messageAge = Date.now() - (lastMessage.editedAt ?? lastMessage.createdAt).getTime();
 		if (messageAge > TIMEOUT.GAME_WANTED_MESSAGE) return;
 
 		// 有効なロールを取得してゲーム設定

@@ -63,11 +63,7 @@ export class GameManager {
 	/**
 	 * ゲームデータを更新
 	 */
-	async updateGameData(
-		roleId: Snowflake,
-		key: string,
-		data: string[] | null,
-	): Promise<void> {
+	async updateGameData(roleId: Snowflake, key: string, data: string[] | null): Promise<void> {
 		const game = await this.store.get(roleId);
 		if (!game) return;
 

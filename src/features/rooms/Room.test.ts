@@ -96,9 +96,7 @@ const mockGuild = {
 describe("Room", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		vi.mocked(GameManager.getInstance).mockReturnValue(
-			mockGameManager as unknown as GameManager,
-		);
+		vi.mocked(GameManager.getInstance).mockReturnValue(mockGameManager as unknown as GameManager);
 		mockGameManager.getDefaultGame.mockReturnValue(defaultGame);
 
 		// setupGameCollector 内で呼ばれる wantedChannel の解決をデフォルトで null にする
@@ -470,28 +468,6 @@ describe("Room", () => {
 	// Room.delete()
 	// -----------------------------------------------------------------------
 	describe("delete()", () => {
-		async function createRoom() {
-			const category = makeCategory("category-id");
-			const textChannel = makeTextChannel("text-id");
-			const voiceChannel = makeVoiceChannel("voice-id", new Collection());
-
-			mockChannelManager.create
-				.mockResolvedValueOnce(category)
-				.mockResolvedValueOnce(textChannel)
-				.mockResolvedValueOnce(voiceChannel);
-
-			const room = new Room(mockGuild, { hostname: "TestRoom" });
-			await room.create();
-
-			// create後はresolveをVCに向ける（membersゲッターで使用）
-			mockChannelManager.resolve.mockImplementation((id: string) => {
-				if (id === "voice-id") return voiceChannel;
-				return null;
-			});
-
-			return { room, voiceChannel };
-		}
-
 		it("reserved === true のときは削除せず false を返す", async () => {
 			const category = makeCategory("category-id");
 			const textChannel = makeTextChannel("text-id");
@@ -633,9 +609,7 @@ describe("Room", () => {
 
 			// @everyone のIDでデフォルトゲームに戻す
 			vi.clearAllMocks();
-			vi.mocked(GameManager.getInstance).mockReturnValue(
-				mockGameManager as unknown as GameManager,
-			);
+			vi.mocked(GameManager.getInstance).mockReturnValue(mockGameManager as unknown as GameManager);
 			mockGameManager.getDefaultGame.mockReturnValue(defaultGame);
 			mockGameManager.getGame.mockResolvedValue(defaultGame);
 			mockChannelManager.resolve.mockImplementation((id: string) => {
@@ -731,9 +705,7 @@ describe("Room", () => {
 
 			const addVc1 = makeVoiceChannel("add-vc-1");
 			const addVc2 = makeVoiceChannel("add-vc-2");
-			mockChannelManager.create
-				.mockResolvedValueOnce(addVc1)
-				.mockResolvedValueOnce(addVc2);
+			mockChannelManager.create.mockResolvedValueOnce(addVc1).mockResolvedValueOnce(addVc2);
 
 			const result = await room.setAdditionalVoiceChannels(2);
 
@@ -754,9 +726,7 @@ describe("Room", () => {
 			// まず2つ追加
 			const addVc1 = makeVoiceChannel("add-vc-1");
 			const addVc2 = makeVoiceChannel("add-vc-2");
-			mockChannelManager.create
-				.mockResolvedValueOnce(addVc1)
-				.mockResolvedValueOnce(addVc2);
+			mockChannelManager.create.mockResolvedValueOnce(addVc1).mockResolvedValueOnce(addVc2);
 			await room.setAdditionalVoiceChannels(2);
 
 			mockChannelManager.delete.mockResolvedValue(undefined);
@@ -775,9 +745,7 @@ describe("Room", () => {
 
 			const addVc1 = makeVoiceChannel("add-vc-1");
 			const addVc2 = makeVoiceChannel("add-vc-2");
-			mockChannelManager.create
-				.mockResolvedValueOnce(addVc1)
-				.mockResolvedValueOnce(addVc2);
+			mockChannelManager.create.mockResolvedValueOnce(addVc1).mockResolvedValueOnce(addVc2);
 			await room.setAdditionalVoiceChannels(2);
 
 			mockChannelManager.delete.mockResolvedValue(undefined);
@@ -925,7 +893,10 @@ describe("Room", () => {
 		it("指定インデックスのVCに voiceState.setChannel() を呼ぶ", async () => {
 			const room = await createRoom();
 			const setChannel = vi.fn().mockResolvedValue(undefined);
-			const voiceState = { channelId: "other-vc-id", setChannel } as unknown as import("discord.js").VoiceState;
+			const voiceState = {
+				channelId: "other-vc-id",
+				setChannel,
+			} as unknown as import("discord.js").VoiceState;
 
 			const result = await room.moveMembers(voiceState, 0);
 
@@ -936,7 +907,10 @@ describe("Room", () => {
 		it("すでに対象VCにいる場合は setChannel() を呼ばず true を返す", async () => {
 			const room = await createRoom();
 			const setChannel = vi.fn();
-			const voiceState = { channelId: "voice-id", setChannel } as unknown as import("discord.js").VoiceState;
+			const voiceState = {
+				channelId: "voice-id",
+				setChannel,
+			} as unknown as import("discord.js").VoiceState;
 
 			const result = await room.moveMembers(voiceState, 0);
 
@@ -947,7 +921,10 @@ describe("Room", () => {
 		it("指定インデックスのVCが存在しない場合は false を返す", async () => {
 			const room = await createRoom();
 			const setChannel = vi.fn();
-			const voiceState = { channelId: "other-vc-id", setChannel } as unknown as import("discord.js").VoiceState;
+			const voiceState = {
+				channelId: "other-vc-id",
+				setChannel,
+			} as unknown as import("discord.js").VoiceState;
 
 			// インデックス 5 は存在しない
 			const result = await room.moveMembers(voiceState, 5);
@@ -959,7 +936,10 @@ describe("Room", () => {
 		it("setChannel() が失敗した場合は false を返す", async () => {
 			const room = await createRoom();
 			const setChannel = vi.fn().mockRejectedValue(new Error("Permission denied"));
-			const voiceState = { channelId: "other-vc-id", setChannel } as unknown as import("discord.js").VoiceState;
+			const voiceState = {
+				channelId: "other-vc-id",
+				setChannel,
+			} as unknown as import("discord.js").VoiceState;
 
 			const result = await room.moveMembers(voiceState, 0);
 

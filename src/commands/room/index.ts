@@ -13,15 +13,11 @@ export const roomCommand: CommandHandler = {
 	data: new SlashCommandBuilder()
 		.setName("room")
 		.setDescription("部屋の設定")
-		.addSubcommand((subcommand) =>
-			subcommand.setName("sync").setDescription("専用チャットの同期"),
-		)
+		.addSubcommand((subcommand) => subcommand.setName("sync").setDescription("専用チャットの同期"))
 		.addSubcommand((subcommand) =>
 			subcommand
 				.setName("vc")
-				.setDescription(
-					`追加VC数の変更（${DISCORD_LIMITS.MAX_ADDITIONAL_VOICE_CHANNELS}個まで）`,
-				)
+				.setDescription(`追加VC数の変更（${DISCORD_LIMITS.MAX_ADDITIONAL_VOICE_CHANNELS}個まで）`)
 				.addIntegerOption((option) =>
 					option
 						.setName("number")

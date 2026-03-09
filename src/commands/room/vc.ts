@@ -7,9 +7,7 @@ import { getRoomFromTextChannel } from "../helpers/room";
  * /room vc サブコマンド
  * 追加VC数の変更
  */
-export async function handleVc(
-	interaction: ChatInputCommandInteraction,
-): Promise<void> {
+export async function handleVc(interaction: ChatInputCommandInteraction): Promise<void> {
 	await interaction.deferReply();
 
 	const room = getRoomFromTextChannel(interaction);
@@ -19,10 +17,7 @@ export async function handleVc(
 	}
 
 	const number = interaction.options.getInteger("number") ?? 0;
-	const count = Math.max(
-		0,
-		Math.min(number, DISCORD_LIMITS.MAX_ADDITIONAL_VOICE_CHANNELS),
-	);
+	const count = Math.max(0, Math.min(number, DISCORD_LIMITS.MAX_ADDITIONAL_VOICE_CHANNELS));
 
 	await interaction.editReply("追加VC数を変更しています…");
 

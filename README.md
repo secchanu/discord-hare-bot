@@ -19,22 +19,26 @@
 ## インストール
 
 1. リポジトリをクローン:
+
 ```bash
 git clone https://github.com/secchanu/discord-hare-bot.git
 cd discord-hare-bot
 ```
 
 2. 依存関係をインストール:
+
 ```bash
 npm install
 ```
 
 3. 環境変数を設定:
+
 ```bash
 cp .env.example .env
 ```
 
 4. `.env`を編集:
+
 ```env
 DISCORD_BOT_TOKEN=ボットトークン
 DISCORD_READY_CHANNEL_ID=ルーム作成用VC ID
@@ -45,11 +49,13 @@ DISCORD_IGNORE_ROLES=除外するロールID（例: 123456789:管理者,98765432
 ## 使い方
 
 ### 開発環境
+
 ```bash
 npm run dev
 ```
 
 ### 本番環境
+
 ```bash
 npm run build
 npm start

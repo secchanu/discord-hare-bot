@@ -20,10 +20,7 @@ export const teamCommand: CommandHandler = {
 		.setName("team")
 		.setDescription("メンバーをチームに分ける")
 		.addIntegerOption((option) =>
-			option
-				.setName("number")
-				.setDescription("チーム数（指定無しの場合2チーム）")
-				.setMinValue(2),
+			option.setName("number").setDescription("チーム数（指定無しの場合2チーム）").setMinValue(2),
 		),
 
 	async execute(interaction) {
@@ -45,9 +42,7 @@ export const teamCommand: CommandHandler = {
 
 		const channel = interaction.member.voice.channel;
 		if (!channel) {
-			await interaction.editReply(
-				"このコマンドはルーム内のボイスチャンネルでのみ使用できます。",
-			);
+			await interaction.editReply("このコマンドはルーム内のボイスチャンネルでのみ使用できます。");
 			return;
 		}
 
@@ -80,34 +75,20 @@ export const teamCommand: CommandHandler = {
 
 		// ボタンコンポーネント
 		const actionRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-			new ButtonBuilder()
-				.setCustomId("cancel")
-				.setLabel("キャンセル")
-				.setStyle(ButtonStyle.Danger),
-			new ButtonBuilder()
-				.setCustomId("confirm")
-				.setLabel("確定")
-				.setStyle(ButtonStyle.Success),
-			new ButtonBuilder()
-				.setCustomId("reroll")
-				.setLabel("再抽選")
-				.setStyle(ButtonStyle.Primary),
+			new ButtonBuilder().setCustomId("cancel").setLabel("キャンセル").setStyle(ButtonStyle.Danger),
+			new ButtonBuilder().setCustomId("confirm").setLabel("確定").setStyle(ButtonStyle.Success),
+			new ButtonBuilder().setCustomId("reroll").setLabel("再抽選").setStyle(ButtonStyle.Primary),
 		);
 
 		const moveRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-			new ButtonBuilder()
-				.setCustomId("move")
-				.setLabel("移動")
-				.setStyle(ButtonStyle.Primary),
+			new ButtonBuilder().setCustomId("move").setLabel("移動").setStyle(ButtonStyle.Primary),
 		);
 
 		// チーム表示
 		const formatTeams = () =>
 			teams
 				.map((members, i) => {
-					const memberList = members
-						.map((m: GuildMember) => m.toString())
-						.join("\n");
+					const memberList = members.map((m: GuildMember) => m.toString()).join("\n");
 					return `チーム${i + 1}\n${memberList}`;
 				})
 				.join("\n\n");
@@ -148,17 +129,14 @@ export const teamCommand: CommandHandler = {
 					await buttonInteraction.deferUpdate();
 
 					// 必要なVCを確保（チーム数と同じ数の追加VCが必要）
-					const currentVcCount =
-						room.toData().channels.additionalVoiceChannelIds.length;
+					const currentVcCount = room.toData().channels.additionalVoiceChannelIds.length;
 					if (currentVcCount < teamCount) {
 						await room.setAdditionalVoiceChannels(teamCount);
 					}
 
 					// チームごとに移動（すべてのチームを追加VCに移動）
 					const movePromises = teams.flatMap((teamMembers, index) =>
-						teamMembers.map((member) =>
-							room.moveMembers(member.voice, index + 1),
-						),
+						teamMembers.map((member) => room.moveMembers(member.voice, index + 1)),
 					);
 
 					await Promise.all(movePromises);

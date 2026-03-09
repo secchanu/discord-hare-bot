@@ -5,9 +5,7 @@ import { getRoomFromTextChannel } from "../helpers/room";
  * /room sync サブコマンド
  * 専用チャットの権限同期
  */
-export async function handleSync(
-	interaction: ChatInputCommandInteraction,
-): Promise<void> {
+export async function handleSync(interaction: ChatInputCommandInteraction): Promise<void> {
 	await interaction.deferReply();
 
 	const room = getRoomFromTextChannel(interaction);

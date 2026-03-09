@@ -9,9 +9,7 @@ import { getRoomFromTextChannel } from "../helpers/room";
  * /room game サブコマンド
  * ルームのゲーム設定
  */
-export async function handleGame(
-	interaction: ChatInputCommandInteraction,
-): Promise<void> {
+export async function handleGame(interaction: ChatInputCommandInteraction): Promise<void> {
 	if (!isGuildInteraction(interaction)) {
 		await interaction.reply({
 			content: "このコマンドはサーバー内でのみ使用できます。",
@@ -38,10 +36,7 @@ export async function handleGame(
 	}
 
 	// メンバーがロールを持っているかチェック
-	if (
-		!hasRoleManager(interaction.member) ||
-		!interaction.member.roles.cache.has(roleId)
-	) {
+	if (!hasRoleManager(interaction.member) || !interaction.member.roles.cache.has(roleId)) {
 		await interaction.editReply(
 			"このゲームは付与されていないため選択できません\n先に<id:customize>からプレイするゲームとして選択してください",
 		);
