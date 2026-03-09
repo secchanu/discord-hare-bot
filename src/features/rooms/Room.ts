@@ -147,20 +147,6 @@ export class Room {
 		});
 		this.categoryId = category.id;
 
-		// テキストチャンネルを作成（プライベートチャンネル）
-		const textChannel = await this.channelManager.create({
-			name: "専用チャット",
-			type: ChannelType.GuildText,
-			parent: category,
-			permissionOverwrites: [
-				{
-					id: this.guild.id, // @everyone
-					deny: ["ViewChannel"],
-				},
-			],
-		});
-		this.textChannelId = textChannel.id;
-
 		// 初期ゲームを決定
 		if (this.ownerId) {
 			const owner = this.guild.members.resolve(this.ownerId);
@@ -169,13 +155,27 @@ export class Room {
 			}
 		}
 
-		// ボイスチャンネルを作成
-		const voiceChannel = await this.channelManager.create({
-			name: this.game.name,
-			type: ChannelType.GuildVoice,
-			parent: category,
-			bitrate: this.guild.maximumBitrate,
-		});
+		// テキストチャンネルとボイスチャンネルを作成
+		const [textChannel, voiceChannel] = await Promise.all([
+			this.channelManager.create({
+				name: "専用チャット",
+				type: ChannelType.GuildText,
+				parent: category,
+				permissionOverwrites: [
+					{
+						id: this.guild.id, // @everyone
+						deny: ["ViewChannel"],
+					},
+				],
+			}),
+			this.channelManager.create({
+				name: this.game.name,
+				type: ChannelType.GuildVoice,
+				parent: category,
+				bitrate: this.guild.maximumBitrate,
+			}),
+		]);
+		this.textChannelId = textChannel.id;
 		this.voiceChannelId = voiceChannel.id;
 
 		// ゲームコレクターをセットアップ
@@ -190,6 +190,9 @@ export class Room {
 	async delete(): Promise<boolean> {
 		if (this.reserved) return false;
 		if (this.members.size) return false;
+
+		// コレクターを停止
+		this.gameCollector?.stop();
 
 		// 追加VCを削除
 		await this.setAdditionalVoiceChannels(0);
@@ -206,9 +209,6 @@ export class Room {
 		if (this.categoryId) {
 			await this.channelManager.delete(this.categoryId);
 		}
-
-		// コレクターを停止
-		this.gameCollector?.stop();
 
 		return true;
 	}
