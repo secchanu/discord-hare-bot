@@ -1,13 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GameManager } from "./GameManager";
-import { GameStore } from "./GameStore";
+import type { GameStore } from "./GameStore";
 import { defaultGame } from "./types";
-
-vi.mock("./GameStore", () => ({
-	GameStore: {
-		getInstance: vi.fn(),
-	},
-}));
 
 const mockStore = {
 	get: vi.fn(),
@@ -15,16 +9,18 @@ const mockStore = {
 	delete: vi.fn(),
 };
 
+function createManager(): GameManager {
+	return new GameManager(mockStore as unknown as GameStore);
+}
+
 describe("GameManager", () => {
 	beforeEach(() => {
-		vi.mocked(GameStore.getInstance).mockReturnValue(mockStore as unknown as GameStore);
-		GameManager.resetInstance();
 		vi.clearAllMocks();
 	});
 
 	describe("getDefaultGame()", () => {
 		it("デフォルトゲームを返す", () => {
-			const manager = GameManager.getInstance();
+			const manager = createManager();
 			const result = manager.getDefaultGame();
 			expect(result).toEqual(defaultGame);
 		});
@@ -32,7 +28,7 @@ describe("GameManager", () => {
 
 	describe("getGame()", () => {
 		it("空文字のroleIdを渡した場合はデフォルトゲームを返す", async () => {
-			const manager = GameManager.getInstance();
+			const manager = createManager();
 			const result = await manager.getGame("");
 			expect(result).toEqual(defaultGame);
 			expect(mockStore.get).not.toHaveBeenCalled();
@@ -42,7 +38,7 @@ describe("GameManager", () => {
 			const game = { id: "role-1", name: "ゲームA", data: {} };
 			mockStore.get.mockResolvedValue(game);
 
-			const manager = GameManager.getInstance();
+			const manager = createManager();
 			const result = await manager.getGame("role-1");
 
 			expect(mockStore.get).toHaveBeenCalledWith("role-1");
@@ -52,7 +48,7 @@ describe("GameManager", () => {
 		it("ストアにゲームが存在しない場合はnullを返す", async () => {
 			mockStore.get.mockResolvedValue(undefined);
 
-			const manager = GameManager.getInstance();
+			const manager = createManager();
 			const result = await manager.getGame("unknown-role");
 
 			expect(result).toBeNull();
@@ -64,7 +60,7 @@ describe("GameManager", () => {
 			mockStore.set.mockResolvedValue(undefined);
 
 			const role = { id: "role-2", name: "ゲームB" };
-			const manager = GameManager.getInstance();
+			const manager = createManager();
 			const result = await manager.createGame(role as never);
 
 			expect(result).toEqual({ id: "role-2", name: "ゲームB", data: {} });
@@ -80,7 +76,7 @@ describe("GameManager", () => {
 		it("存在しないゲームの場合は何もしない", async () => {
 			mockStore.get.mockResolvedValue(undefined);
 
-			const manager = GameManager.getInstance();
+			const manager = createManager();
 			await manager.updateGameData("no-role", "key", ["value"]);
 
 			expect(mockStore.set).not.toHaveBeenCalled();
@@ -91,7 +87,7 @@ describe("GameManager", () => {
 			mockStore.get.mockResolvedValue(game);
 			mockStore.set.mockResolvedValue(undefined);
 
-			const manager = GameManager.getInstance();
+			const manager = createManager();
 			await manager.updateGameData("role-3", "マップ", ["マップA", "マップB"]);
 
 			expect(mockStore.set).toHaveBeenCalledWith("role-3", {
@@ -110,7 +106,7 @@ describe("GameManager", () => {
 			mockStore.get.mockResolvedValue(game);
 			mockStore.set.mockResolvedValue(undefined);
 
-			const manager = GameManager.getInstance();
+			const manager = createManager();
 			await manager.updateGameData("role-3", "マップ", []);
 
 			expect(mockStore.set).toHaveBeenCalledWith("role-3", {
@@ -129,7 +125,7 @@ describe("GameManager", () => {
 			mockStore.get.mockResolvedValue(game);
 			mockStore.set.mockResolvedValue(undefined);
 
-			const manager = GameManager.getInstance();
+			const manager = createManager();
 			await manager.updateGameData("role-3", "マップ", null);
 
 			expect(mockStore.set).toHaveBeenCalledWith("role-3", {
@@ -144,7 +140,7 @@ describe("GameManager", () => {
 		it("ストアからゲームを削除する", async () => {
 			mockStore.delete.mockResolvedValue(undefined);
 
-			const manager = GameManager.getInstance();
+			const manager = createManager();
 			await manager.deleteGame("role-4");
 
 			expect(mockStore.delete).toHaveBeenCalledWith("role-4");

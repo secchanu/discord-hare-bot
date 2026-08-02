@@ -1,4 +1,5 @@
-import type { ChatInputCommandInteraction, Client } from "discord.js";
+import { type ChatInputCommandInteraction, type Guild, MessageFlags } from "discord.js";
+import type { AppContext } from "../bot/context";
 import { callCommand } from "./call";
 import { gameCommand } from "./game";
 import { randCommand } from "./rand";
@@ -19,31 +20,31 @@ const commands: Map<string, CommandHandler> = new Map([
 
 /**
  * コマンドを Discord に登録
+ * 単一ギルド運用のため、即時反映されるギルドコマンドとして登録する
  */
-export async function registerCommands(client: Client): Promise<void> {
+export async function registerCommands(guild: Guild): Promise<void> {
 	const commandData = Array.from(commands.values()).map((cmd) => cmd.data);
 
-	try {
-		await client.application?.commands.set(commandData);
-		console.log(`Registered ${commandData.length} commands`);
-	} catch (error) {
-		console.error("Failed to register commands:", error);
-	}
+	await guild.commands.set(commandData);
+	console.log(`Registered ${commandData.length} commands to guild ${guild.id}`);
 }
 
 /**
  * コマンドを実行
  */
-export async function handleCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+export async function handleCommand(
+	interaction: ChatInputCommandInteraction,
+	ctx: AppContext,
+): Promise<void> {
 	const command = commands.get(interaction.commandName);
 
 	if (!command) {
 		await interaction.reply({
 			content: "不明なコマンドです。",
-			ephemeral: true,
+			flags: MessageFlags.Ephemeral,
 		});
 		return;
 	}
 
-	await command.execute(interaction);
+	await command.execute(interaction, ctx);
 }

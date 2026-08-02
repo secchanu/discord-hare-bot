@@ -1,9 +1,7 @@
 /**
  * Bot設定
- * 環境変数から読み込み、デフォルト値で補完
+ * 環境変数から読み込み、composition root（index.ts）で検証して注入する
  */
-
-import { EXIT_CODE } from "../constants";
 
 interface IgnoreRole {
 	id: string;
@@ -12,6 +10,7 @@ interface IgnoreRole {
 
 interface BotConfig {
 	botToken: string;
+	guildId: string;
 	readyChannelId: string;
 	wantedChannelId: string;
 	ignoreRoleIds: string[];
@@ -49,13 +48,14 @@ export function parseIgnoreRoles(envValue: string | undefined): IgnoreRole[] {
 /**
  * 環境変数から設定を読み込み
  */
-function loadConfig(): BotConfig {
-	const ignoreRoles = parseIgnoreRoles(process.env.DISCORD_IGNORE_ROLES);
+export function loadConfig(env: NodeJS.ProcessEnv = process.env): BotConfig {
+	const ignoreRoles = parseIgnoreRoles(env.DISCORD_IGNORE_ROLES);
 
 	return {
-		botToken: process.env.DISCORD_BOT_TOKEN || "",
-		readyChannelId: process.env.DISCORD_READY_CHANNEL_ID || "",
-		wantedChannelId: process.env.DISCORD_WANTED_CHANNEL_ID || "",
+		botToken: env.DISCORD_BOT_TOKEN || "",
+		guildId: env.DISCORD_GUILD_ID || "",
+		readyChannelId: env.DISCORD_READY_CHANNEL_ID || "",
+		wantedChannelId: env.DISCORD_WANTED_CHANNEL_ID || "",
 		ignoreRoleIds: ignoreRoles.map((role) => role.id),
 		ignoreRoles: ignoreRoles,
 	};
@@ -63,12 +63,17 @@ function loadConfig(): BotConfig {
 
 /**
  * 設定の検証
+ * 不足している環境変数のエラーメッセージ一覧を返す
  */
-export function validateConfig(config: BotConfig): void {
+export function validateConfig(config: BotConfig): string[] {
 	const errors: string[] = [];
 
 	if (!config.botToken) {
 		errors.push("DISCORD_BOT_TOKEN is required");
+	}
+
+	if (!config.guildId) {
+		errors.push("DISCORD_GUILD_ID is required");
 	}
 
 	if (!config.readyChannelId) {
@@ -79,32 +84,7 @@ export function validateConfig(config: BotConfig): void {
 		errors.push("DISCORD_WANTED_CHANNEL_ID is required");
 	}
 
-	if (errors.length > 0) {
-		console.error("Configuration errors:");
-		for (const error of errors) {
-			console.error(`  - ${error}`);
-		}
-		console.error("\nPlease check your environment variables or .env file");
-		process.exit(EXIT_CODE.ERROR);
-	}
+	return errors;
 }
 
-// 設定を読み込んで検証
-let config: BotConfig;
-
-// テスト環境では初期化をスキップ
-if (process.env.NODE_ENV !== "test") {
-	config = loadConfig();
-	validateConfig(config);
-} else {
-	// テスト用のダミー設定
-	config = {
-		botToken: "",
-		readyChannelId: "",
-		wantedChannelId: "",
-		ignoreRoleIds: [],
-		ignoreRoles: [],
-	};
-}
-
-export { config, type BotConfig };
+export type { BotConfig, IgnoreRole };

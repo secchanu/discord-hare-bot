@@ -35,18 +35,18 @@ export const roomCommand: CommandHandler = {
 				),
 		),
 
-	async execute(interaction) {
+	async execute(interaction, ctx) {
 		const subcommand = interaction.options.getSubcommand();
 
 		switch (subcommand) {
 			case "sync":
-				await handleSync(interaction);
+				await handleSync(interaction, ctx);
 				break;
 			case "vc":
-				await handleVc(interaction);
+				await handleVc(interaction, ctx);
 				break;
 			case "game":
-				await handleGame(interaction);
+				await handleGame(interaction, ctx);
 				break;
 		}
 	},

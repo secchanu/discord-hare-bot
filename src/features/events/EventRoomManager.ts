@@ -1,44 +1,34 @@
 import type { GuildScheduledEvent, PartialGuildScheduledEvent, User } from "discord.js";
-import { config } from "../../bot/config";
-import { Room } from "../rooms/Room";
-import { RoomManager } from "../rooms/RoomManager";
-import { RoomStore } from "../rooms/RoomStore";
+import type { BotConfig } from "../../bot/config";
+import type { RoomManager } from "../rooms/RoomManager";
 
 /**
  * Guild Scheduled Event とルーム連携を管理
+ * ルームの特定は常にイベントIDで行う
+ * （Partial イベントやチャンネル削除後でも event.id は必ず取得できるため）
  */
 export class EventRoomManager {
-	private static instance: EventRoomManager;
-	private roomManager: RoomManager;
-
-	private constructor() {
-		this.roomManager = RoomManager.getInstance();
-	}
-
-	public static getInstance(): EventRoomManager {
-		if (!EventRoomManager.instance) {
-			EventRoomManager.instance = new EventRoomManager();
-		}
-		return EventRoomManager.instance;
-	}
+	constructor(
+		private roomManager: RoomManager,
+		private config: BotConfig,
+	) {}
 
 	/**
 	 * イベント用のルームを作成
 	 */
 	async createEventRoom(event: GuildScheduledEvent): Promise<void> {
-		if (event.channelId !== config.readyChannelId) return;
+		if (event.channelId !== this.config.readyChannelId) return;
 		if (!event.guild) return;
 
-		const room = new Room(event.guild, {
-			hostname: event.name,
-			reserved: true,
-			eventId: event.id,
-			position: event.channel?.parent?.rawPosition,
-		});
+		// 既にこのイベントのルームがある場合は二重作成しない
+		if (this.roomManager.findByEventId(event.id)) return;
 
 		try {
-			const roomId = await room.create();
-			const roomStore = RoomStore.getInstance();
+			const room = await this.roomManager.createReservedRoom(event.guild, {
+				hostname: event.name,
+				eventId: event.id,
+				position: event.channel?.parent?.rawPosition,
+			});
 
 			// イベントのチャンネルをルームのVCに設定
 			const voiceChannel = room.voiceChannel;
@@ -49,10 +39,6 @@ export class EventRoomManager {
 			// イベント参加者を追加
 			const subscribers = await event.fetchSubscribers();
 			await Promise.all(subscribers.map((sub) => room.setTextChannelVisibility(sub.user, true)));
-
-			// 保存
-			this.roomManager.getAll().set(roomId, room);
-			await roomStore.set(roomId, room.toData());
 		} catch (error) {
 			console.error("[EventRoomManager] Failed to create event room:", error);
 		}
@@ -62,40 +48,22 @@ export class EventRoomManager {
 	 * イベントルームを削除
 	 */
 	async deleteEventRoom(event: GuildScheduledEvent | PartialGuildScheduledEvent): Promise<void> {
-		const parentId = event.channel?.parentId;
-		if (!parentId) return;
-
-		const room = this.roomManager.get(parentId);
+		const room = this.roomManager.findByEventId(event.id);
 		if (!room) return;
 
-		room.reserved = false;
-		const deleted = await room.delete();
-
-		if (deleted) {
-			const roomStore = RoomStore.getInstance();
-			this.roomManager.getAll().delete(parentId);
-			await roomStore.delete(parentId);
-		}
+		room.unreserve();
+		await this.roomManager.removeRoom(room);
 	}
 
 	/**
 	 * イベントルームを更新
 	 */
 	async updateEventRoom(
-		oldEvent: GuildScheduledEvent | PartialGuildScheduledEvent | null,
+		_oldEvent: GuildScheduledEvent | PartialGuildScheduledEvent | null,
 		newEvent: GuildScheduledEvent,
 	): Promise<void> {
 		// アクティブなイベントは処理しない
 		if (newEvent.isActive()) return;
-
-		// 準備チャンネルから準備チャンネルへの変更は無視
-		if (
-			oldEvent?.channelId &&
-			oldEvent.channelId === config.readyChannelId &&
-			newEvent.channelId === config.readyChannelId
-		) {
-			return;
-		}
 
 		// イベント完了またはキャンセル時
 		if (newEvent.isCompleted() || newEvent.isCanceled()) {
@@ -103,13 +71,23 @@ export class EventRoomManager {
 			return;
 		}
 
-		// チャンネルが変更された場合
-		if (oldEvent && oldEvent.channel?.parentId !== newEvent.channel?.parentId) {
-			await this.deleteEventRoom(oldEvent);
+		const room = this.roomManager.findByEventId(newEvent.id);
+
+		if (room) {
+			// createEventRoom 内でイベントのチャンネルをルームVCへ付け替えた直後の
+			// update 通知や、ルーム内VCへの変更は無視する
+			if (newEvent.channelId && room.hasVoiceChannel(newEvent.channelId)) return;
+
+			// 準備チャンネルに再設定された場合もルームは既に存在するため何もしない
+			if (newEvent.channelId === this.config.readyChannelId) return;
+
+			// ルーム外のチャンネルへ変更された場合はルームを解体
+			await this.deleteEventRoom(newEvent);
+			return;
 		}
 
-		// 準備チャンネルに設定された場合
-		if (newEvent.channelId === config.readyChannelId) {
+		// 準備チャンネルに設定された場合はルームを作成
+		if (newEvent.channelId === this.config.readyChannelId) {
 			await this.createEventRoom(newEvent);
 		}
 	}
@@ -121,10 +99,7 @@ export class EventRoomManager {
 		event: GuildScheduledEvent | PartialGuildScheduledEvent,
 		user: User,
 	): Promise<void> {
-		const parentId = event.channel?.parentId;
-		if (!parentId) return;
-
-		const room = this.roomManager.get(parentId);
+		const room = this.roomManager.findByEventId(event.id);
 		if (!room) return;
 
 		await room.setTextChannelVisibility(user, true);
@@ -137,10 +112,7 @@ export class EventRoomManager {
 		event: GuildScheduledEvent | PartialGuildScheduledEvent,
 		user: User,
 	): Promise<void> {
-		const parentId = event.channel?.parentId;
-		if (!parentId) return;
-
-		const room = this.roomManager.get(parentId);
+		const room = this.roomManager.findByEventId(event.id);
 		if (!room) return;
 
 		await room.setTextChannelVisibility(user, false);

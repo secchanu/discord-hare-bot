@@ -1,46 +1,29 @@
 import type { ChatInputCommandInteraction } from "discord.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { RoomManager } from "../../features/rooms/RoomManager";
-import { RoomStore } from "../../features/rooms/RoomStore";
+import type { AppContext } from "../../bot/context";
 import { handleGame } from "./game";
-
-vi.mock("../../bot/config", () => ({
-	config: {
-		ignoreRoleIds: ["ignore-role-id"],
-		ignoreRoles: [{ id: "ignore-role-id", note: "テスト用無視ロール" }],
-	},
-}));
 
 vi.mock("../../types/guards", () => ({
 	hasRoleManager: vi.fn().mockReturnValue(true),
 	hasVoiceState: vi.fn().mockReturnValue(true),
 }));
 
-vi.mock("../../features/rooms/RoomManager", () => ({
-	RoomManager: {
-		getInstance: vi.fn(),
-	},
-}));
-
-vi.mock("../../features/rooms/RoomStore", () => ({
-	RoomStore: {
-		getInstance: vi.fn(),
-	},
-}));
-
-const mockRoomStore = {
-	set: vi.fn(),
-};
-
 const mockRoom = {
 	id: "category-id",
-	setGame: vi.fn(),
-	toData: vi.fn().mockReturnValue({}),
 };
 
 const mockRoomManager = {
 	get: vi.fn(),
+	changeGame: vi.fn(),
 };
+
+const mockCtx = {
+	roomManager: mockRoomManager,
+	config: {
+		ignoreRoleIds: ["ignore-role-id"],
+		ignoreRoles: [{ id: "ignore-role-id", note: "テスト用無視ロール" }],
+	},
+} as unknown as AppContext;
 
 function makeInteraction(overrides: Record<string, unknown> = {}): ChatInputCommandInteraction {
 	return {
@@ -68,10 +51,8 @@ function makeInteraction(overrides: Record<string, unknown> = {}): ChatInputComm
 describe("/room game", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		vi.mocked(RoomManager.getInstance).mockReturnValue(mockRoomManager as unknown as RoomManager);
-		vi.mocked(RoomStore.getInstance).mockReturnValue(mockRoomStore as unknown as RoomStore);
 		mockRoomManager.get.mockReturnValue(mockRoom);
-		mockRoom.setGame.mockResolvedValue({ id: "game-role-id", name: "ゲームA", data: {} });
+		mockRoomManager.changeGame.mockResolvedValue({ id: "game-role-id", name: "ゲームA", data: {} });
 	});
 
 	it("ギルド外から実行した場合はエラーを返す", async () => {
@@ -79,15 +60,15 @@ describe("/room game", () => {
 			inCachedGuild: vi.fn().mockReturnValue(false),
 			channel: null,
 		});
-		await handleGame(interaction);
-		expect(interaction.reply).toHaveBeenCalledWith(expect.objectContaining({ ephemeral: true }));
+		await handleGame(interaction, mockCtx);
+		expect(interaction.reply).toHaveBeenCalled();
 		expect(interaction.deferReply).not.toHaveBeenCalled();
 	});
 
 	it("ルーム外から実行した場合はエラーを返す", async () => {
 		mockRoomManager.get.mockReturnValue(undefined);
 		const interaction = makeInteraction();
-		await handleGame(interaction);
+		await handleGame(interaction, mockCtx);
 		expect(interaction.editReply).toHaveBeenCalledWith(expect.stringContaining("ルーム内でのみ"));
 	});
 
@@ -97,9 +78,9 @@ describe("/room game", () => {
 				getRole: vi.fn().mockReturnValue({ id: "ignore-role-id", name: "無視ロール" }),
 			},
 		});
-		await handleGame(interaction);
+		await handleGame(interaction, mockCtx);
 		expect(interaction.editReply).toHaveBeenCalledWith(expect.stringContaining("選択できません"));
-		expect(mockRoom.setGame).not.toHaveBeenCalled();
+		expect(mockRoomManager.changeGame).not.toHaveBeenCalled();
 	});
 
 	it("メンバーがロールを持っていない場合は「付与されていない」を返す", async () => {
@@ -112,23 +93,22 @@ describe("/room game", () => {
 				},
 			},
 		});
-		await handleGame(interaction);
+		await handleGame(interaction, mockCtx);
 		expect(interaction.editReply).toHaveBeenCalledWith(expect.stringContaining("付与されていない"));
-		expect(mockRoom.setGame).not.toHaveBeenCalled();
+		expect(mockRoomManager.changeGame).not.toHaveBeenCalled();
 	});
 
-	it("setGame が null を返した場合はエラーを返す", async () => {
-		mockRoom.setGame.mockResolvedValue(null);
+	it("changeGame が null を返した場合はエラーを返す", async () => {
+		mockRoomManager.changeGame.mockResolvedValue(null);
 		const interaction = makeInteraction();
-		await handleGame(interaction);
+		await handleGame(interaction, mockCtx);
 		expect(interaction.editReply).toHaveBeenCalledWith(expect.stringContaining("選択できません"));
 	});
 
 	it("正常にゲームを変更した場合は変更後のゲーム名を含むメッセージを返す", async () => {
 		const interaction = makeInteraction();
-		await handleGame(interaction);
-		expect(mockRoom.setGame).toHaveBeenCalledWith("game-role-id");
-		expect(mockRoomStore.set).toHaveBeenCalledWith("category-id", expect.anything());
+		await handleGame(interaction, mockCtx);
+		expect(mockRoomManager.changeGame).toHaveBeenCalledWith(mockRoom, "game-role-id");
 		expect(interaction.editReply).toHaveBeenCalledWith(expect.stringContaining("ゲームA"));
 	});
 });

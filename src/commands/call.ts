@@ -1,4 +1,4 @@
-import { SlashCommandBuilder } from "discord.js";
+import { MessageFlags, SlashCommandBuilder } from "discord.js";
 import { isGuildInteraction } from "./helpers";
 import { getRoomFromVoiceChannel } from "./helpers/room";
 import type { CommandHandler } from "./types";
@@ -18,18 +18,18 @@ export const callCommand: CommandHandler = {
 				.setMinValue(0),
 		),
 
-	async execute(interaction) {
+	async execute(interaction, ctx) {
 		if (!isGuildInteraction(interaction)) {
 			await interaction.reply({
 				content: "このコマンドはサーバー内でのみ使用できます。",
-				ephemeral: true,
+				flags: MessageFlags.Ephemeral,
 			});
 			return;
 		}
 
 		await interaction.deferReply();
 
-		const room = getRoomFromVoiceChannel(interaction);
+		const room = getRoomFromVoiceChannel(interaction, ctx.roomManager);
 		if (!room) {
 			await interaction.editReply("このコマンドはルーム内でのみ使用できます。");
 			return;

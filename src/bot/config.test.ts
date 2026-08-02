@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { parseIgnoreRoles, validateConfig } from "./config";
+import { describe, expect, it } from "vitest";
+import { loadConfig, parseIgnoreRoles, validateConfig } from "./config";
 
 describe("parseIgnoreRoles", () => {
 	it("undefinedを渡した場合は空配列を返す", () => {
@@ -44,77 +44,82 @@ describe("parseIgnoreRoles", () => {
 	});
 });
 
-describe("validateConfig", () => {
-	// oxlint-disable-next-line typescript/no-explicit-any -- spyOnの戻り型はvitest内部の型制約により統一不可
-	let exitSpy: any;
-	// oxlint-disable-next-line typescript/no-explicit-any -- spyOnの戻り型はvitest内部の型制約により統一不可
-	let consoleErrorSpy: any;
-
-	beforeEach(() => {
-		// process.exit をモックしてテスト中断を防ぐ
-		exitSpy = vi.spyOn(process, "exit").mockImplementation((_code?: string | number | null) => {
-			throw new Error(`process.exit called with code ${_code}`);
+describe("loadConfig", () => {
+	it("環境変数から設定を読み込む", () => {
+		const config = loadConfig({
+			DISCORD_BOT_TOKEN: "token",
+			DISCORD_GUILD_ID: "guild-1",
+			DISCORD_READY_CHANNEL_ID: "111",
+			DISCORD_WANTED_CHANNEL_ID: "222",
+			DISCORD_IGNORE_ROLES: "333:管理者",
 		});
-		consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+		expect(config).toEqual({
+			botToken: "token",
+			guildId: "guild-1",
+			readyChannelId: "111",
+			wantedChannelId: "222",
+			ignoreRoleIds: ["333"],
+			ignoreRoles: [{ id: "333", note: "管理者" }],
+		});
 	});
 
-	afterEach(() => {
-		exitSpy.mockRestore();
-		consoleErrorSpy.mockRestore();
+	it("未設定の環境変数は空値になる", () => {
+		const config = loadConfig({});
+
+		expect(config).toEqual({
+			botToken: "",
+			guildId: "",
+			readyChannelId: "",
+			wantedChannelId: "",
+			ignoreRoleIds: [],
+			ignoreRoles: [],
+		});
 	});
+});
+
+describe("validateConfig", () => {
+	const validConfig = {
+		botToken: "token",
+		guildId: "guild-1",
+		readyChannelId: "111",
+		wantedChannelId: "222",
+		ignoreRoleIds: [],
+		ignoreRoles: [],
+	};
 
 	it("全必須フィールドが揃っている場合はエラーなし", () => {
-		const config = {
-			botToken: "token",
-			readyChannelId: "111",
-			wantedChannelId: "222",
-			ignoreRoleIds: [],
-			ignoreRoles: [],
-		};
-		expect(() => validateConfig(config)).not.toThrow();
+		expect(validateConfig(validConfig)).toEqual([]);
 	});
 
-	it("botTokenが空の場合はprocess.exitが呼ばれる", () => {
-		const config = {
+	it("botTokenが空の場合はエラーが返る", () => {
+		const errors = validateConfig({ ...validConfig, botToken: "" });
+		expect(errors).toEqual(["DISCORD_BOT_TOKEN is required"]);
+	});
+
+	it("guildIdが空の場合はエラーが返る", () => {
+		const errors = validateConfig({ ...validConfig, guildId: "" });
+		expect(errors).toEqual(["DISCORD_GUILD_ID is required"]);
+	});
+
+	it("readyChannelIdが空の場合はエラーが返る", () => {
+		const errors = validateConfig({ ...validConfig, readyChannelId: "" });
+		expect(errors).toEqual(["DISCORD_READY_CHANNEL_ID is required"]);
+	});
+
+	it("wantedChannelIdが空の場合はエラーが返る", () => {
+		const errors = validateConfig({ ...validConfig, wantedChannelId: "" });
+		expect(errors).toEqual(["DISCORD_WANTED_CHANNEL_ID is required"]);
+	});
+
+	it("複数フィールドが空の場合は全てのエラーが返る", () => {
+		const errors = validateConfig({
+			...validConfig,
 			botToken: "",
-			readyChannelId: "111",
-			wantedChannelId: "222",
-			ignoreRoleIds: [],
-			ignoreRoles: [],
-		};
-		expect(() => validateConfig(config)).toThrow("process.exit called with code 1");
-	});
-
-	it("readyChannelIdが空の場合はprocess.exitが呼ばれる", () => {
-		const config = {
-			botToken: "token",
-			readyChannelId: "",
-			wantedChannelId: "222",
-			ignoreRoleIds: [],
-			ignoreRoles: [],
-		};
-		expect(() => validateConfig(config)).toThrow("process.exit called with code 1");
-	});
-
-	it("wantedChannelIdが空の場合はprocess.exitが呼ばれる", () => {
-		const config = {
-			botToken: "token",
-			readyChannelId: "111",
-			wantedChannelId: "",
-			ignoreRoleIds: [],
-			ignoreRoles: [],
-		};
-		expect(() => validateConfig(config)).toThrow("process.exit called with code 1");
-	});
-
-	it("複数フィールドが空の場合もprocess.exitが呼ばれる", () => {
-		const config = {
-			botToken: "",
+			guildId: "",
 			readyChannelId: "",
 			wantedChannelId: "",
-			ignoreRoleIds: [],
-			ignoreRoles: [],
-		};
-		expect(() => validateConfig(config)).toThrow("process.exit called with code 1");
+		});
+		expect(errors).toHaveLength(4);
 	});
 });

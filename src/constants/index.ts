@@ -27,4 +27,11 @@ export const TIMEOUT = {
 	INTERACTION: TIME.MINUTE, // インタラクションのタイムアウト
 	MODAL_SUBMIT: TIME.HOUR, // モーダル送信のタイムアウト
 	GAME_WANTED_MESSAGE: TIME.SIX_HOURS, // ゲーム募集メッセージの有効期限
+	// セッションUI（ボタン操作）の無操作タイムアウト。
+	// 15分（インタラクショントークンの有効期限）を超えるため、
+	// メッセージ編集はコンポーネント側のインタラクションで行うこと
+	COMPONENT_IDLE: 15 * TIME.MINUTE,
+	// コレクターを失ったコンポーネント操作に「期限切れ」を返すまでの猶予。
+	// 生きているコレクターが先に応答するのを待つ（初回応答期限の3秒以内に収める）
+	ORPHANED_COMPONENT_GRACE: 2 * TIME.SECOND,
 } as const;

@@ -23,7 +23,7 @@ export const randCommand: CommandHandler = {
 			subcommand.setName("data").setDescription("ゲーム固有データから"),
 		),
 
-	async execute(interaction) {
+	async execute(interaction, ctx) {
 		const subcommand = interaction.options.getSubcommand();
 
 		switch (subcommand) {
@@ -31,7 +31,7 @@ export const randCommand: CommandHandler = {
 				await handleMember(interaction);
 				break;
 			case "data":
-				await handleData(interaction);
+				await handleData(interaction, ctx);
 				break;
 		}
 	},

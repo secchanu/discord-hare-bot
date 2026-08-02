@@ -1,32 +1,24 @@
 import type { ChatInputCommandInteraction } from "discord.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { GameManager } from "../../features/games/GameManager";
-import { RoomManager } from "../../features/rooms/RoomManager";
+import type { AppContext } from "../../bot/context";
 import { handleData } from "./data";
-
-vi.mock("../../features/games/GameManager", () => ({
-	GameManager: {
-		getInstance: vi.fn(),
-	},
-}));
-
-vi.mock("../../features/rooms/RoomManager", () => ({
-	RoomManager: {
-		getInstance: vi.fn(),
-	},
-}));
 
 const mockGameManager = {
 	getGame: vi.fn(),
 };
 
 const mockRoom = {
-	toData: vi.fn().mockReturnValue({ gameId: "game-role-id" }),
+	game: { id: "game-role-id", name: "ゲームA", data: {} },
 };
 
 const mockRoomManager = {
 	get: vi.fn(),
 };
+
+const mockCtx = {
+	roomManager: mockRoomManager,
+	gameManager: mockGameManager,
+} as unknown as AppContext;
 
 function makeSelectInteraction(key: string) {
 	return {
@@ -49,6 +41,7 @@ function makeMessage(selectInteraction: ReturnType<typeof makeSelectInteraction>
 	return {
 		awaitMessageComponent: vi.fn().mockResolvedValue(selectInteraction),
 		createMessageComponentCollector: vi.fn().mockReturnValue(mockCollector),
+		edit: vi.fn().mockResolvedValue(undefined),
 		collector: mockCollector,
 	};
 }
@@ -66,8 +59,6 @@ function makeInteraction(message: ReturnType<typeof makeMessage>) {
 describe("/rand data", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		vi.mocked(GameManager.getInstance).mockReturnValue(mockGameManager as unknown as GameManager);
-		vi.mocked(RoomManager.getInstance).mockReturnValue(mockRoomManager as unknown as RoomManager);
 		mockRoomManager.get.mockReturnValue(mockRoom);
 	});
 
@@ -75,7 +66,7 @@ describe("/rand data", () => {
 		mockRoomManager.get.mockReturnValue(undefined);
 		const message = makeMessage(null);
 		const interaction = makeInteraction(message);
-		await handleData(interaction);
+		await handleData(interaction, mockCtx);
 		expect(interaction.editReply).toHaveBeenCalledWith(expect.stringContaining("ルーム内でのみ"));
 	});
 
@@ -83,7 +74,7 @@ describe("/rand data", () => {
 		mockGameManager.getGame.mockResolvedValue(null);
 		const message = makeMessage(null);
 		const interaction = makeInteraction(message);
-		await handleData(interaction);
+		await handleData(interaction, mockCtx);
 		expect(interaction.editReply).toHaveBeenCalledWith(
 			expect.stringContaining("ゲームが設定されていません"),
 		);
@@ -93,7 +84,7 @@ describe("/rand data", () => {
 		mockGameManager.getGame.mockResolvedValue({ id: "game-role-id", name: "ゲームA", data: {} });
 		const message = makeMessage(null);
 		const interaction = makeInteraction(message);
-		await handleData(interaction);
+		await handleData(interaction, mockCtx);
 		expect(interaction.editReply).toHaveBeenCalledWith(
 			expect.stringContaining("抽選できるデータがありません"),
 		);
@@ -106,19 +97,10 @@ describe("/rand data", () => {
 			data: { マップ: ["マップA", "マップB"] },
 		});
 		// awaitMessageComponent が null を返す（タイムアウト）
-		const message = {
-			awaitMessageComponent: vi.fn().mockResolvedValue(null),
-			createMessageComponentCollector: vi.fn(),
-		};
-		const interaction = {
-			channel: { id: "text-channel-id", parentId: "category-id" },
-			user: { id: "user-id" },
-			deferReply: vi.fn().mockResolvedValue(undefined),
-			editReply: vi.fn().mockImplementation(async () => message),
-			deleteReply: vi.fn().mockResolvedValue(undefined),
-		} as unknown as ChatInputCommandInteraction;
+		const message = makeMessage(null);
+		const interaction = makeInteraction(message);
 
-		await handleData(interaction);
+		await handleData(interaction, mockCtx);
 		expect(interaction.editReply).toHaveBeenLastCalledWith(
 			expect.objectContaining({ content: expect.stringContaining("タイムアウト") }),
 		);
@@ -132,37 +114,18 @@ describe("/rand data", () => {
 				data: { マップ: ["マップA", "マップB"] },
 			});
 
-			let collectHandler: ((interaction: unknown) => Promise<void>) | undefined;
-			const mockCollector = {
-				on: vi.fn((event: string, handler: (interaction: unknown) => Promise<void>) => {
-					if (event === "collect") collectHandler = handler;
-				}),
-				stop: vi.fn(),
-			};
-
 			const selectInteraction = makeSelectInteraction("マップ");
-			const message = {
-				awaitMessageComponent: vi.fn().mockResolvedValue(selectInteraction),
-				createMessageComponentCollector: vi.fn().mockReturnValue(mockCollector),
-			};
+			const message = makeMessage(selectInteraction);
+			const interaction = makeInteraction(message);
 
-			const interaction = {
-				channel: { id: "text-channel-id", parentId: "category-id" },
-				user: { id: "user-id" },
-				deferReply: vi.fn().mockResolvedValue(undefined),
-				editReply: vi.fn().mockImplementation(async () => message),
-				deleteReply: vi.fn().mockResolvedValue(undefined),
-			} as unknown as ChatInputCommandInteraction;
-
-			const handlePromise = handleData(interaction);
-			// handleData は非同期でコレクターを設定するため、Promise が解決するのを待つ
-			await handlePromise;
+			await handleData(interaction, mockCtx);
 
 			return {
 				interaction,
 				selectInteraction,
-				mockCollector,
-				getCollectHandler: () => collectHandler,
+				message,
+				mockCollector: message.collector,
+				getCollectHandler: () => message.collector.getCollectHandler(),
 			};
 		}
 
@@ -195,14 +158,14 @@ describe("/rand data", () => {
 			};
 			await collectHandler!(buttonInteraction);
 
-			expect(mockCollector.stop).toHaveBeenCalled();
+			expect(mockCollector.stop).toHaveBeenCalledWith("confirm");
 			expect(buttonInteraction.update).toHaveBeenCalledWith(
 				expect.objectContaining({ components: [] }),
 			);
 		});
 
-		it("cancel後: リプライが削除される", async () => {
-			const { interaction, mockCollector, getCollectHandler } = await setupWithData();
+		it("cancel後: ボタン側のインタラクションでリプライが削除される", async () => {
+			const { mockCollector, getCollectHandler } = await setupWithData();
 			const collectHandler = getCollectHandler();
 			expect(collectHandler).toBeDefined();
 
@@ -210,11 +173,13 @@ describe("/rand data", () => {
 				customId: "cancel",
 				deferUpdate: vi.fn().mockResolvedValue(undefined),
 				update: vi.fn().mockResolvedValue(undefined),
+				// 元コマンドのトークンは15分で失効するため、削除はボタン側インタラクションで行う
+				deleteReply: vi.fn().mockResolvedValue(undefined),
 			};
 			await collectHandler!(buttonInteraction);
 
-			expect(mockCollector.stop).toHaveBeenCalled();
-			expect(interaction.deleteReply).toHaveBeenCalled();
+			expect(mockCollector.stop).toHaveBeenCalledWith("cancel");
+			expect(buttonInteraction.deleteReply).toHaveBeenCalled();
 		});
 	});
 });

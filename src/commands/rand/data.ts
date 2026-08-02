@@ -6,26 +6,28 @@ import {
 	ComponentType,
 	StringSelectMenuBuilder,
 } from "discord.js";
+import type { AppContext } from "../../bot/context";
 import { TIMEOUT } from "../../constants";
-import { GameManager } from "../../features/games/GameManager";
 import { getRoomFromTextChannel } from "../helpers/room";
 
 /**
  * /rand data サブコマンド
  * ゲームデータからランダム選択
  */
-export async function handleData(interaction: ChatInputCommandInteraction): Promise<void> {
+export async function handleData(
+	interaction: ChatInputCommandInteraction,
+	ctx: AppContext,
+): Promise<void> {
 	await interaction.deferReply();
 
-	const room = getRoomFromTextChannel(interaction);
+	const room = getRoomFromTextChannel(interaction, ctx.roomManager);
 	if (!room) {
 		await interaction.editReply("このコマンドはルーム内でのみ使用できます。");
 		return;
 	}
 
-	const roomData = room.toData();
-	const gameManager = GameManager.getInstance();
-	const game = await gameManager.getGame(roomData.gameId);
+	// ルームのゲームはメモリ上のスナップショットのため、最新のデータをストアから取得する
+	const game = await ctx.gameManager.getGame(room.game.id);
 
 	if (!game) {
 		await interaction.editReply("ルームにゲームが設定されていません。");
@@ -103,9 +105,10 @@ export async function handleData(interaction: ChatInputCommandInteraction): Prom
 		components: [actionRow],
 	});
 
-	// ボタン操作を処理
+	// ボタン操作を処理（セッションUI: 無操作が続いたら終了する）
 	const collector = message.createMessageComponentCollector({
 		componentType: ComponentType.Button,
+		idle: TIMEOUT.COMPONENT_IDLE,
 		filter: (i) =>
 			i.user.id === interaction.user.id && ["cancel", "confirm", "reroll"].includes(i.customId),
 	});
@@ -113,13 +116,13 @@ export async function handleData(interaction: ChatInputCommandInteraction): Prom
 	collector.on("collect", async (buttonInteraction) => {
 		switch (buttonInteraction.customId) {
 			case "cancel":
-				collector.stop();
+				collector.stop("cancel");
 				await buttonInteraction.deferUpdate();
-				await interaction.deleteReply();
+				await buttonInteraction.deleteReply();
 				break;
 
 			case "confirm":
-				collector.stop();
+				collector.stop("confirm");
 				await buttonInteraction.update({ components: [] });
 				break;
 
@@ -129,6 +132,16 @@ export async function handleData(interaction: ChatInputCommandInteraction): Prom
 					components: [actionRow],
 				});
 				break;
+		}
+	});
+
+	// セッション終了時はボタンを取り除き、押せない死にボタンを残さない
+	collector.on("end", async (_collected, reason) => {
+		if (reason === "cancel" || reason === "confirm") return;
+		try {
+			await message.edit({ components: [] });
+		} catch {
+			// メッセージが削除済みの場合などは無視する
 		}
 	});
 }

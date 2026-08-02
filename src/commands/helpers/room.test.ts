@@ -1,23 +1,17 @@
 import type { ChatInputCommandInteraction } from "discord.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { RoomManager } from "../../features/rooms/RoomManager";
 import { getRoomFromTextChannel, getRoomFromVoiceChannel } from "./room";
 
-// RoomManager はシングルトンなのでモジュールごとモックする
-vi.mock("../../features/rooms/RoomManager");
-
-// GuildMemberRoleManager を使うガード関数が通るよう、hasRoleManager もモック
+// GuildMemberRoleManager を使うガード関数が通るよう、hasRoleManager をモック
 vi.mock("../../types/guards", () => ({
 	hasRoleManager: vi.fn().mockReturnValue(true),
 }));
 
-import { RoomManager } from "../../features/rooms/RoomManager";
-
 const mockGet = vi.fn();
+const mockRoomManager = { get: mockGet } as unknown as RoomManager;
 
 beforeEach(() => {
-	vi.mocked(RoomManager.getInstance).mockReturnValue({
-		get: mockGet,
-	} as unknown as RoomManager);
 	mockGet.mockReset();
 });
 
@@ -34,7 +28,7 @@ describe("getRoomFromVoiceChannel", () => {
 			},
 		} as unknown as ChatInputCommandInteraction;
 
-		const result = getRoomFromVoiceChannel(interaction);
+		const result = getRoomFromVoiceChannel(interaction, mockRoomManager);
 		expect(mockGet).toHaveBeenCalledWith("category-id");
 		expect(result).toBe(mockRoom);
 	});
@@ -44,7 +38,7 @@ describe("getRoomFromVoiceChannel", () => {
 			member: null,
 		} as unknown as ChatInputCommandInteraction;
 
-		expect(getRoomFromVoiceChannel(interaction)).toBeNull();
+		expect(getRoomFromVoiceChannel(interaction, mockRoomManager)).toBeNull();
 	});
 
 	it("VCに未接続（voice.channelがnull）の場合は null を返す", () => {
@@ -54,7 +48,7 @@ describe("getRoomFromVoiceChannel", () => {
 			},
 		} as unknown as ChatInputCommandInteraction;
 
-		expect(getRoomFromVoiceChannel(interaction)).toBeNull();
+		expect(getRoomFromVoiceChannel(interaction, mockRoomManager)).toBeNull();
 	});
 
 	it("VCのparentIdがnullの場合は null を返す", () => {
@@ -66,7 +60,7 @@ describe("getRoomFromVoiceChannel", () => {
 			},
 		} as unknown as ChatInputCommandInteraction;
 
-		expect(getRoomFromVoiceChannel(interaction)).toBeNull();
+		expect(getRoomFromVoiceChannel(interaction, mockRoomManager)).toBeNull();
 	});
 
 	it("ルームが存在しない場合は null を返す", () => {
@@ -80,7 +74,7 @@ describe("getRoomFromVoiceChannel", () => {
 			},
 		} as unknown as ChatInputCommandInteraction;
 
-		expect(getRoomFromVoiceChannel(interaction)).toBeNull();
+		expect(getRoomFromVoiceChannel(interaction, mockRoomManager)).toBeNull();
 	});
 });
 
@@ -93,7 +87,7 @@ describe("getRoomFromTextChannel", () => {
 			channel: { parentId: "category-id" },
 		} as unknown as ChatInputCommandInteraction;
 
-		const result = getRoomFromTextChannel(interaction);
+		const result = getRoomFromTextChannel(interaction, mockRoomManager);
 		expect(mockGet).toHaveBeenCalledWith("category-id");
 		expect(result).toBe(mockRoom);
 	});
@@ -103,7 +97,7 @@ describe("getRoomFromTextChannel", () => {
 			channel: null,
 		} as unknown as ChatInputCommandInteraction;
 
-		expect(getRoomFromTextChannel(interaction)).toBeNull();
+		expect(getRoomFromTextChannel(interaction, mockRoomManager)).toBeNull();
 	});
 
 	it("channelにparentIdプロパティがない場合は null を返す", () => {
@@ -111,7 +105,7 @@ describe("getRoomFromTextChannel", () => {
 			channel: { id: "channel-id" },
 		} as unknown as ChatInputCommandInteraction;
 
-		expect(getRoomFromTextChannel(interaction)).toBeNull();
+		expect(getRoomFromTextChannel(interaction, mockRoomManager)).toBeNull();
 	});
 
 	it("ルーム外のチャンネル（parentIdがnull）から実行された場合は null を返す", () => {
@@ -119,7 +113,7 @@ describe("getRoomFromTextChannel", () => {
 			channel: { parentId: null },
 		} as unknown as ChatInputCommandInteraction;
 
-		expect(getRoomFromTextChannel(interaction)).toBeNull();
+		expect(getRoomFromTextChannel(interaction, mockRoomManager)).toBeNull();
 	});
 
 	it("対応するルームが存在しない場合は null を返す", () => {
@@ -129,6 +123,6 @@ describe("getRoomFromTextChannel", () => {
 			channel: { parentId: "category-id" },
 		} as unknown as ChatInputCommandInteraction;
 
-		expect(getRoomFromTextChannel(interaction)).toBeNull();
+		expect(getRoomFromTextChannel(interaction, mockRoomManager)).toBeNull();
 	});
 });

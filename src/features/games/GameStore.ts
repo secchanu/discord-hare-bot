@@ -6,18 +6,10 @@ import type { Game } from "./types";
  * ギルドゲームの永続化ストア
  */
 export class GameStore {
-	private static instance: GameStore;
 	private store;
 
-	private constructor() {
-		this.store = createKeyvStore<Game>("games.sqlite");
-	}
-
-	public static getInstance(): GameStore {
-		if (!GameStore.instance) {
-			GameStore.instance = new GameStore();
-		}
-		return GameStore.instance;
+	constructor(filename = "games.sqlite") {
+		this.store = createKeyvStore<Game>(filename);
 	}
 
 	/**
@@ -32,13 +24,6 @@ export class GameStore {
 	 */
 	async get(roleId: Snowflake): Promise<Game | undefined> {
 		return await this.store.get(roleId);
-	}
-
-	/**
-	 * ゲームの存在確認
-	 */
-	async has(roleId: Snowflake): Promise<boolean> {
-		return await this.store.has(roleId);
 	}
 
 	/**

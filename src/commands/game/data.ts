@@ -3,15 +3,15 @@ import {
 	type ChatInputCommandInteraction,
 	ComponentType,
 	inlineCode,
+	MessageFlags,
 	ModalBuilder,
 	type Role,
 	StringSelectMenuBuilder,
 	TextInputBuilder,
 	TextInputStyle,
 } from "discord.js";
-import { config } from "../../bot/config";
+import type { AppContext } from "../../bot/context";
 import { DISCORD_LIMITS, TIMEOUT } from "../../constants";
-import { GameManager } from "../../features/games/GameManager";
 import { hasRoleManager } from "../../types/guards";
 import { isGuildInteraction } from "../helpers";
 
@@ -19,11 +19,14 @@ import { isGuildInteraction } from "../helpers";
  * /game data サブコマンド
  * ゲームデータの編集
  */
-export async function handleData(interaction: ChatInputCommandInteraction): Promise<void> {
+export async function handleData(
+	interaction: ChatInputCommandInteraction,
+	ctx: AppContext,
+): Promise<void> {
 	if (!isGuildInteraction(interaction)) {
 		await interaction.reply({
 			content: "このコマンドはサーバー内でのみ使用できます。",
-			ephemeral: true,
+			flags: MessageFlags.Ephemeral,
 		});
 		return;
 	}
@@ -35,7 +38,7 @@ export async function handleData(interaction: ChatInputCommandInteraction): Prom
 	const roleId = role.id;
 
 	// 無効なロールチェック
-	if (roleId === everyoneRoleId || config.ignoreRoleIds.includes(roleId)) {
+	if (roleId === everyoneRoleId || ctx.config.ignoreRoleIds.includes(roleId)) {
 		await interaction.editReply("このロールはゲームとして選択できません");
 		return;
 	}
@@ -48,7 +51,7 @@ export async function handleData(interaction: ChatInputCommandInteraction): Prom
 		return;
 	}
 
-	const gameManager = GameManager.getInstance();
+	const gameManager = ctx.gameManager;
 	let game = await gameManager.getGame(roleId);
 
 	// ゲームが存在しない場合は作成
@@ -141,8 +144,10 @@ export async function handleData(interaction: ChatInputCommandInteraction): Prom
 		.map((d) => d.trim())
 		.filter((d) => d);
 
+	// 元のコマンドのインタラクショントークンは15分で失効するため、
+	// モーダル送信（最大1時間待つ）以降の編集はモーダル側のインタラクションで行う
 	if (!newKey) {
-		await interaction.editReply({
+		await modalInteraction.editReply({
 			content: `${game.name}: データ名が入力されていません`,
 			components: [],
 		});
@@ -153,7 +158,7 @@ export async function handleData(interaction: ChatInputCommandInteraction): Prom
 	if (!newData.length) {
 		// データ削除
 		await gameManager.updateGameData(roleId, newKey, null);
-		await interaction.editReply({
+		await modalInteraction.editReply({
 			content: `${game.name}: 「${newKey}」のデータを削除しました`,
 			components: [],
 		});
@@ -164,12 +169,12 @@ export async function handleData(interaction: ChatInputCommandInteraction): Prom
 
 		const update = inlineCode(newData.join(", "));
 		if (dataKey !== newKey) {
-			await interaction.editReply({
+			await modalInteraction.editReply({
 				content: `${game.name}: 「${dataKey}」のデータを「${newKey}」に更新しました\n${update}`,
 				components: [],
 			});
 		} else {
-			await interaction.editReply({
+			await modalInteraction.editReply({
 				content: `${game.name}: 「${newKey}」のデータを更新しました\n${update}`,
 				components: [],
 			});
@@ -178,7 +183,7 @@ export async function handleData(interaction: ChatInputCommandInteraction): Prom
 		// データ作成
 		await gameManager.updateGameData(roleId, newKey, newData);
 		const update = inlineCode(newData.join(", "));
-		await interaction.editReply({
+		await modalInteraction.editReply({
 			content: `${game.name}: 「${newKey}」のデータを作成しました\n${update}`,
 			components: [],
 		});

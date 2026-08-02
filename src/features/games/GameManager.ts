@@ -1,5 +1,5 @@
 import type { Role, Snowflake } from "discord.js";
-import { GameStore } from "./GameStore";
+import type { GameStore } from "./GameStore";
 import { defaultGame, type Game } from "./types";
 
 /**
@@ -7,27 +7,7 @@ import { defaultGame, type Game } from "./types";
  * Discord Role ベースのゲーム管理
  */
 export class GameManager {
-	private static instance: GameManager | undefined;
-	private store: GameStore;
-
-	private constructor() {
-		this.store = GameStore.getInstance();
-	}
-
-	public static getInstance(): GameManager {
-		if (!GameManager.instance) {
-			GameManager.instance = new GameManager();
-		}
-		return GameManager.instance;
-	}
-
-	/**
-	 * テスト用: インスタンスをリセット
-	 * @internal
-	 */
-	public static resetInstance(): void {
-		GameManager.instance = undefined;
-	}
+	constructor(private store: GameStore) {}
 
 	/**
 	 * デフォルトゲームを取得

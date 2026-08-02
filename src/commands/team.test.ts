@@ -1,12 +1,13 @@
 import { Collection } from "discord.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { AppContext } from "../bot/context";
 
-// RoomManagerとhelpers/roomをモック
-vi.mock("../features/rooms/RoomManager");
 vi.mock("./helpers/room");
 
 import { getRoomFromVoiceChannel } from "./helpers/room";
 import { teamCommand } from "./team";
+
+const mockCtx = { roomManager: {} } as unknown as AppContext;
 
 /**
  * モックGuildMemberを生成するヘルパー
@@ -39,7 +40,7 @@ function setupInteraction(
 	memberIds: string[],
 	teamNumber: number,
 	mockRoom: {
-		toData: ReturnType<typeof vi.fn>;
+		additionalVoiceChannelCount: number;
 		setAdditionalVoiceChannels: ReturnType<typeof vi.fn>;
 		moveMembers: ReturnType<typeof vi.fn>;
 	},
@@ -49,14 +50,17 @@ function setupInteraction(
 	vi.mocked(getRoomFromVoiceChannel).mockReturnValue(mockRoom as never);
 
 	let collectHandler: ((interaction: unknown) => Promise<void>) | undefined;
+	let endHandler: ((collected: unknown, reason: string) => Promise<void>) | undefined;
 	const mockCollector = {
-		on: vi.fn((event: string, handler: (i: unknown) => Promise<void>) => {
+		on: vi.fn((event: string, handler: never) => {
 			if (event === "collect") collectHandler = handler;
+			if (event === "end") endHandler = handler;
 		}),
 		stop: vi.fn(),
 	};
 	const mockMessage = {
 		createMessageComponentCollector: vi.fn().mockReturnValue(mockCollector),
+		edit: vi.fn().mockResolvedValue(undefined),
 	};
 
 	const mockInteraction = {
@@ -83,6 +87,7 @@ function setupInteraction(
 		mockCollector,
 		mockMessage,
 		getCollectHandler: () => collectHandler,
+		getEndHandler: () => endHandler,
 	};
 }
 
@@ -91,7 +96,7 @@ function setupInteraction(
  */
 function createMockRoom() {
 	return {
-		toData: vi.fn().mockReturnValue({ channels: { additionalVoiceChannelIds: [] } }),
+		additionalVoiceChannelCount: 0,
 		setAdditionalVoiceChannels: vi.fn().mockResolvedValue(undefined),
 		moveMembers: vi.fn().mockResolvedValue(true),
 	};
@@ -105,7 +110,7 @@ describe("/team（ロジック）", () => {
 	it("チーム数はメンバー数を上限にクランプされる（メンバー3人でチーム数5を指定 → 3チーム）", async () => {
 		const { mockInteraction } = setupInteraction(["1", "2", "3"], 5, createMockRoom());
 
-		await teamCommand.execute(mockInteraction as never);
+		await teamCommand.execute(mockInteraction as never, mockCtx);
 
 		const editReplyCall = mockInteraction.editReply.mock.calls[0][0] as {
 			content: string;
@@ -122,7 +127,7 @@ describe("/team（ロジック）", () => {
 	it("全メンバーがいずれかのチームに属する", async () => {
 		const { mockInteraction } = setupInteraction(["1", "2", "3", "4"], 2, createMockRoom());
 
-		await teamCommand.execute(mockInteraction as never);
+		await teamCommand.execute(mockInteraction as never, mockCtx);
 
 		const editReplyCall = mockInteraction.editReply.mock.calls[0][0] as {
 			content: string;
@@ -136,7 +141,7 @@ describe("/team（ロジック）", () => {
 	it("チーム間のメンバー数の差が1以下になる（5人を2チームに分割）", async () => {
 		const { mockInteraction } = setupInteraction(["1", "2", "3", "4", "5"], 2, createMockRoom());
 
-		await teamCommand.execute(mockInteraction as never);
+		await teamCommand.execute(mockInteraction as never, mockCtx);
 
 		const editReplyCall = mockInteraction.editReply.mock.calls[0][0] as {
 			content: string;
@@ -154,15 +159,11 @@ describe("/team（UI状態分岐）", () => {
 	 * 共通のセットアップ: 4人メンバー、ルームあり
 	 */
 	async function setupTeamCommand(teamNumber = 2) {
-		const { mockInteraction, mockCollector, mockMessage, getCollectHandler } = setupInteraction(
-			["1", "2", "3", "4"],
-			teamNumber,
-			createMockRoom(),
-		);
+		const setup = setupInteraction(["1", "2", "3", "4"], teamNumber, createMockRoom());
 
-		await teamCommand.execute(mockInteraction as never);
+		await teamCommand.execute(setup.mockInteraction as never, mockCtx);
 
-		return { mockInteraction, mockCollector, mockMessage, getCollectHandler };
+		return setup;
 	}
 
 	beforeEach(() => {
@@ -184,6 +185,15 @@ describe("/team（UI状態分岐）", () => {
 		expect(buttonIds).toContain("cancel");
 		expect(buttonIds).toContain("confirm");
 		expect(buttonIds).toContain("reroll");
+	});
+
+	it("セッションUIに無操作タイムアウト（idle）が設定される", async () => {
+		const { mockMessage } = await setupTeamCommand();
+
+		const collectorOptions = mockMessage.createMessageComponentCollector.mock.calls[0][0] as {
+			idle?: number;
+		};
+		expect(collectorOptions.idle).toBeGreaterThan(0);
 	});
 
 	it("reroll後: 新しいチーム一覧が表示される（同じcancel/confirm/rerollボタン行）", async () => {
@@ -272,21 +282,39 @@ describe("/team（UI状態分岐）", () => {
 		expect(buttonIds).not.toContain("reroll");
 	});
 
-	it("cancel後: リプライが削除される", async () => {
-		const { mockInteraction, mockCollector, getCollectHandler } = await setupTeamCommand();
+	it("cancel後: ボタン側のインタラクションでリプライが削除される", async () => {
+		const { mockCollector, getCollectHandler } = await setupTeamCommand();
 
 		const cancelButtonInteraction = {
 			customId: "cancel",
 			deferUpdate: vi.fn().mockResolvedValue(undefined),
 			update: vi.fn(),
 			editReply: vi.fn(),
+			// 元コマンドのトークンは15分で失効するため、削除はボタン側インタラクションで行う
+			deleteReply: vi.fn().mockResolvedValue(undefined),
 			user: { id: "user-1" },
 		};
 
 		await getCollectHandler()!(cancelButtonInteraction);
 
-		expect(mockCollector.stop).toHaveBeenCalledOnce();
+		expect(mockCollector.stop).toHaveBeenCalledWith("cancel");
 		expect(cancelButtonInteraction.deferUpdate).toHaveBeenCalledOnce();
-		expect(mockInteraction.deleteReply).toHaveBeenCalledOnce();
+		expect(cancelButtonInteraction.deleteReply).toHaveBeenCalledOnce();
+	});
+
+	it("セッション終了時（タイムアウト）: メッセージからボタンが取り除かれる", async () => {
+		const { mockMessage, getEndHandler } = await setupTeamCommand();
+
+		await getEndHandler()!(new Collection(), "idle");
+
+		expect(mockMessage.edit).toHaveBeenCalledWith({ components: [] });
+	});
+
+	it("セッション終了時（キャンセル起因）: メッセージは編集しない", async () => {
+		const { mockMessage, getEndHandler } = await setupTeamCommand();
+
+		await getEndHandler()!(new Collection(), "cancel");
+
+		expect(mockMessage.edit).not.toHaveBeenCalled();
 	});
 });

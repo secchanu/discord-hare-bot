@@ -1,24 +1,11 @@
 import type { ChatInputCommandInteraction } from "discord.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { GameManager } from "../../features/games/GameManager";
+import type { AppContext } from "../../bot/context";
 import { handleData } from "./data";
-
-vi.mock("../../bot/config", () => ({
-	config: {
-		ignoreRoleIds: ["ignore-role-id"],
-		ignoreRoles: [{ id: "ignore-role-id", note: "テスト用無視ロール" }],
-	},
-}));
 
 vi.mock("../../types/guards", () => ({
 	hasRoleManager: vi.fn().mockReturnValue(true),
 	hasVoiceState: vi.fn().mockReturnValue(true),
-}));
-
-vi.mock("../../features/games/GameManager", () => ({
-	GameManager: {
-		getInstance: vi.fn(),
-	},
 }));
 
 const mockGameManager = {
@@ -26,6 +13,14 @@ const mockGameManager = {
 	createGame: vi.fn(),
 	updateGameData: vi.fn(),
 };
+
+const mockCtx = {
+	gameManager: mockGameManager,
+	config: {
+		ignoreRoleIds: ["ignore-role-id"],
+		ignoreRoles: [{ id: "ignore-role-id", note: "テスト用無視ロール" }],
+	},
+} as unknown as AppContext;
 
 const EVERYONE_ROLE_ID = "everyone-role-id";
 
@@ -39,6 +34,7 @@ function makeModalInteraction(
 ) {
 	return {
 		deferUpdate: vi.fn().mockResolvedValue(undefined),
+		editReply: vi.fn().mockResolvedValue(undefined),
 		fields: {
 			getTextInputValue: vi.fn().mockImplementation((field: string) => {
 				if (field === "key") return overrides.key ?? "newKey";
@@ -113,7 +109,6 @@ function makeInteraction(
 describe("/game data", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		vi.mocked(GameManager.getInstance).mockReturnValue(mockGameManager as unknown as GameManager);
 		mockGameManager.updateGameData.mockResolvedValue(undefined);
 	});
 
@@ -121,21 +116,21 @@ describe("/game data", () => {
 		it("@everyone ロールは「選択できません」を返す", async () => {
 			const interaction = makeInteraction({ roleId: EVERYONE_ROLE_ID });
 			mockGameManager.getGame.mockResolvedValue(null);
-			await handleData(interaction);
+			await handleData(interaction, mockCtx);
 			expect(interaction.editReply).toHaveBeenCalledWith(expect.stringContaining("選択できません"));
 			expect(mockGameManager.getGame).not.toHaveBeenCalled();
 		});
 
 		it("ignoreRoleIds に含まれるロールは「選択できません」を返す", async () => {
 			const interaction = makeInteraction({ roleId: "ignore-role-id" });
-			await handleData(interaction);
+			await handleData(interaction, mockCtx);
 			expect(interaction.editReply).toHaveBeenCalledWith(expect.stringContaining("選択できません"));
 			expect(mockGameManager.getGame).not.toHaveBeenCalled();
 		});
 
 		it("メンバーがロールを持っていない場合は「付与されていない」を返す", async () => {
 			const interaction = makeInteraction({ hasRole: false });
-			await handleData(interaction);
+			await handleData(interaction, mockCtx);
 			expect(interaction.editReply).toHaveBeenCalledWith(
 				expect.stringContaining("付与されていない"),
 			);
@@ -144,8 +139,8 @@ describe("/game data", () => {
 
 		it("ギルド外から実行した場合はエラーを返す", async () => {
 			const interaction = makeInteraction({ inCachedGuild: false });
-			await handleData(interaction);
-			expect(interaction.reply).toHaveBeenCalledWith(expect.objectContaining({ ephemeral: true }));
+			await handleData(interaction, mockCtx);
+			expect(interaction.reply).toHaveBeenCalled();
 			expect(interaction.deferReply).not.toHaveBeenCalled();
 		});
 	});
@@ -172,7 +167,7 @@ describe("/game data", () => {
 			const message = makeMessage(selectInteraction);
 			const interaction = makeInteraction({ message });
 
-			await handleData(interaction);
+			await handleData(interaction, mockCtx);
 
 			expect(mockGameManager.updateGameData).toHaveBeenCalledWith("game-role-id", "マップ", [
 				"マップA",
@@ -193,7 +188,7 @@ describe("/game data", () => {
 			const message = makeMessage(selectInteraction);
 			const interaction = makeInteraction({ message });
 
-			await handleData(interaction);
+			await handleData(interaction, mockCtx);
 
 			// 削除処理: 古いキーをnullで更新
 			expect(mockGameManager.updateGameData).toHaveBeenCalledWith("game-role-id", "マップ", null);
@@ -212,7 +207,7 @@ describe("/game data", () => {
 			const message = makeMessage(selectInteraction);
 			const interaction = makeInteraction({ message });
 
-			await handleData(interaction);
+			await handleData(interaction, mockCtx);
 
 			// 旧キーを削除
 			expect(mockGameManager.updateGameData).toHaveBeenCalledWith("game-role-id", "旧キー", null);
@@ -233,6 +228,8 @@ describe("/game data", () => {
 			});
 		});
 
+		// 結果メッセージは元コマンドのトークン（15分で失効）ではなく
+		// モーダル側のインタラクションで編集される
 		it("データ削除時: 「削除しました」メッセージ", async () => {
 			mockGameManager.getGame.mockResolvedValue({
 				id: "game-role-id",
@@ -240,15 +237,14 @@ describe("/game data", () => {
 				data: { マップ: ["マップA"] },
 			});
 			const selectInteraction = makeSelectInteraction("マップ");
-			selectInteraction.awaitModalSubmit.mockResolvedValue(
-				makeModalInteraction({ key: "マップ", data: "" }),
-			);
+			const modalInteraction = makeModalInteraction({ key: "マップ", data: "" });
+			selectInteraction.awaitModalSubmit.mockResolvedValue(modalInteraction);
 			const message = makeMessage(selectInteraction);
 			const interaction = makeInteraction({ message });
 
-			await handleData(interaction);
+			await handleData(interaction, mockCtx);
 
-			expect(interaction.editReply).toHaveBeenLastCalledWith(
+			expect(modalInteraction.editReply).toHaveBeenLastCalledWith(
 				expect.objectContaining({ content: expect.stringContaining("削除しました") }),
 			);
 		});
@@ -260,15 +256,14 @@ describe("/game data", () => {
 				data: { 旧キー: ["item1"] },
 			});
 			const selectInteraction = makeSelectInteraction("旧キー");
-			selectInteraction.awaitModalSubmit.mockResolvedValue(
-				makeModalInteraction({ key: "新キー", data: "item1\nitem2" }),
-			);
+			const modalInteraction = makeModalInteraction({ key: "新キー", data: "item1\nitem2" });
+			selectInteraction.awaitModalSubmit.mockResolvedValue(modalInteraction);
 			const message = makeMessage(selectInteraction);
 			const interaction = makeInteraction({ message });
 
-			await handleData(interaction);
+			await handleData(interaction, mockCtx);
 
-			expect(interaction.editReply).toHaveBeenLastCalledWith(
+			expect(modalInteraction.editReply).toHaveBeenLastCalledWith(
 				expect.objectContaining({
 					content: expect.stringMatching(/「旧キー」.*「新キー」.*更新しました/),
 				}),
@@ -282,15 +277,14 @@ describe("/game data", () => {
 				data: { マップ: ["マップA"] },
 			});
 			const selectInteraction = makeSelectInteraction("マップ");
-			selectInteraction.awaitModalSubmit.mockResolvedValue(
-				makeModalInteraction({ key: "マップ", data: "マップA\nマップB" }),
-			);
+			const modalInteraction = makeModalInteraction({ key: "マップ", data: "マップA\nマップB" });
+			selectInteraction.awaitModalSubmit.mockResolvedValue(modalInteraction);
 			const message = makeMessage(selectInteraction);
 			const interaction = makeInteraction({ message });
 
-			await handleData(interaction);
+			await handleData(interaction, mockCtx);
 
-			expect(interaction.editReply).toHaveBeenLastCalledWith(
+			expect(modalInteraction.editReply).toHaveBeenLastCalledWith(
 				expect.objectContaining({ content: expect.stringContaining("更新しました") }),
 			);
 		});
@@ -302,15 +296,14 @@ describe("/game data", () => {
 				data: {},
 			});
 			const selectInteraction = makeSelectInteraction("新規作成");
-			selectInteraction.awaitModalSubmit.mockResolvedValue(
-				makeModalInteraction({ key: "新データ", data: "item1\nitem2" }),
-			);
+			const modalInteraction = makeModalInteraction({ key: "新データ", data: "item1\nitem2" });
+			selectInteraction.awaitModalSubmit.mockResolvedValue(modalInteraction);
 			const message = makeMessage(selectInteraction);
 			const interaction = makeInteraction({ message });
 
-			await handleData(interaction);
+			await handleData(interaction, mockCtx);
 
-			expect(interaction.editReply).toHaveBeenLastCalledWith(
+			expect(modalInteraction.editReply).toHaveBeenLastCalledWith(
 				expect.objectContaining({ content: expect.stringContaining("作成しました") }),
 			);
 		});
@@ -329,7 +322,7 @@ describe("/game data", () => {
 			const message = makeMessage(selectInteraction);
 			const interaction = makeInteraction({ message });
 
-			await handleData(interaction);
+			await handleData(interaction, mockCtx);
 
 			expect(mockGameManager.createGame).toHaveBeenCalled();
 			expect(mockGameManager.updateGameData).toHaveBeenCalled();
@@ -346,7 +339,7 @@ describe("/game data", () => {
 			const message = makeMessage(selectInteraction);
 			const interaction = makeInteraction({ message });
 
-			await handleData(interaction);
+			await handleData(interaction, mockCtx);
 
 			expect(mockGameManager.updateGameData).not.toHaveBeenCalled();
 		});

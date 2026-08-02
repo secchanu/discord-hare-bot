@@ -41,6 +41,7 @@ cp .env.example .env
 
 ```env
 DISCORD_BOT_TOKEN=ボットトークン
+DISCORD_GUILD_ID=運用するサーバーのID
 DISCORD_READY_CHANNEL_ID=ルーム作成用VC ID
 DISCORD_WANTED_CHANNEL_ID=ゲーム募集用チャンネル ID
 DISCORD_IGNORE_ROLES=除外するロールID（例: 123456789:管理者,987654321:Bot）

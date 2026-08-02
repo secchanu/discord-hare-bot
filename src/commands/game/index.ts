@@ -19,12 +19,12 @@ export const gameCommand: CommandHandler = {
 				),
 		),
 
-	async execute(interaction) {
+	async execute(interaction, ctx) {
 		const subcommand = interaction.options.getSubcommand();
 
 		switch (subcommand) {
 			case "data":
-				await handleData(interaction);
+				await handleData(interaction, ctx);
 				break;
 		}
 	},

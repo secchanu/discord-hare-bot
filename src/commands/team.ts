@@ -5,8 +5,10 @@ import {
 	Collection,
 	ComponentType,
 	type GuildMember,
+	MessageFlags,
 	SlashCommandBuilder,
 } from "discord.js";
+import { TIMEOUT } from "../constants";
 import { isGuildInteraction } from "./helpers";
 import { getRoomFromVoiceChannel } from "./helpers/room";
 import type { CommandHandler } from "./types";
@@ -23,18 +25,18 @@ export const teamCommand: CommandHandler = {
 			option.setName("number").setDescription("チーム数（指定無しの場合2チーム）").setMinValue(2),
 		),
 
-	async execute(interaction) {
+	async execute(interaction, ctx) {
 		if (!isGuildInteraction(interaction)) {
 			await interaction.reply({
 				content: "このコマンドはサーバー内でのみ使用できます。",
-				ephemeral: true,
+				flags: MessageFlags.Ephemeral,
 			});
 			return;
 		}
 
 		await interaction.deferReply();
 
-		const room = getRoomFromVoiceChannel(interaction);
+		const room = getRoomFromVoiceChannel(interaction, ctx.roomManager);
 		if (!room) {
 			await interaction.editReply("このコマンドはルーム内でのみ使用できます。");
 			return;
@@ -98,8 +100,12 @@ export const teamCommand: CommandHandler = {
 			components: [actionRow],
 		});
 
+		// セッションUI: 無操作が続いたら終了する。
+		// 15分（コマンドのインタラクショントークンの有効期限）を超えて操作され得るため、
+		// 以降のメッセージ編集は各ボタンのインタラクション経由で行う
 		const collector = message.createMessageComponentCollector({
 			componentType: ComponentType.Button,
+			idle: TIMEOUT.COMPONENT_IDLE,
 			filter: (i) =>
 				i.user.id === interaction.user.id &&
 				["cancel", "confirm", "reroll", "move"].includes(i.customId),
@@ -108,9 +114,9 @@ export const teamCommand: CommandHandler = {
 		collector.on("collect", async (buttonInteraction) => {
 			switch (buttonInteraction.customId) {
 				case "cancel":
-					collector.stop();
+					collector.stop("cancel");
 					await buttonInteraction.deferUpdate();
-					await interaction.deleteReply();
+					await buttonInteraction.deleteReply();
 					break;
 
 				case "confirm":
@@ -129,8 +135,7 @@ export const teamCommand: CommandHandler = {
 					await buttonInteraction.deferUpdate();
 
 					// 必要なVCを確保（チーム数と同じ数の追加VCが必要）
-					const currentVcCount = room.toData().channels.additionalVoiceChannelIds.length;
-					if (currentVcCount < teamCount) {
+					if (room.additionalVoiceChannelCount < teamCount) {
 						await room.setAdditionalVoiceChannels(teamCount);
 					}
 
@@ -146,6 +151,16 @@ export const teamCommand: CommandHandler = {
 					});
 					break;
 				}
+			}
+		});
+
+		// セッション終了時はボタンを取り除き、押せない死にボタンを残さない
+		collector.on("end", async (_collected, reason) => {
+			if (reason === "cancel") return;
+			try {
+				await message.edit({ components: [] });
+			} catch {
+				// メッセージが削除済みの場合などは無視する
 			}
 		});
 	},
