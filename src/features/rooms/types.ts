@@ -4,7 +4,7 @@ import type { Room } from "./Room";
 
 /**
  * 永続化可能なルームデータ
- * createdAt は Keyv の JSON シリアライズで型が保てないため ISO 文字列で保持する
+ * createdAt は JSON シリアライズで型が保てないため ISO 文字列で保持する
  */
 export interface RoomData {
 	id: Snowflake; // categoryId

@@ -12,7 +12,7 @@
 
 ## 必要環境
 
-- Node.js（LTS推奨）
+- Node.js 24以上
 - Discordボットトークン
 - 適切な権限を持つDiscordサーバー
 
