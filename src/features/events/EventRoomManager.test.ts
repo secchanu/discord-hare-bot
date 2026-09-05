@@ -10,7 +10,6 @@ const testConfig: BotConfig = {
 	readyChannelId: "ready-channel-id",
 	wantedChannelId: "wanted-channel-id",
 	ignoreRoleIds: [],
-	ignoreRoles: [],
 };
 
 const mockRoomManager = {

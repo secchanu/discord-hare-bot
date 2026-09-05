@@ -134,15 +134,16 @@ describe("/rand member", () => {
 		expect(mentions).toHaveLength(1);
 	});
 
-	it("ギルド外（inCachedGuild=false）の場合はギルド外エラーを返す", async () => {
+	it("ギルド外から実行した場合はエラーを返す", async () => {
 		const members = createMemberCollection(["1", "2"]);
 		const voiceChannel = { members };
 		const interaction = createMockInteraction(voiceChannel as never, false, 1);
 
 		await handleMember(interaction as never);
 
-		expect(interaction.editReply).toHaveBeenCalledWith(
-			"このコマンドはサーバー内でのみ使用できます。",
+		expect(interaction.reply).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.stringContaining("サーバー内でのみ") }),
 		);
+		expect(interaction.editReply).not.toHaveBeenCalled();
 	});
 });

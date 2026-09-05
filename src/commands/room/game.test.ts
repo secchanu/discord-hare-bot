@@ -5,7 +5,6 @@ import { handleGame } from "./game";
 
 vi.mock("../../types/guards", () => ({
 	hasRoleManager: vi.fn().mockReturnValue(true),
-	hasVoiceState: vi.fn().mockReturnValue(true),
 }));
 
 const mockRoom = {
@@ -21,7 +20,6 @@ const mockCtx = {
 	roomManager: mockRoomManager,
 	config: {
 		ignoreRoleIds: ["ignore-role-id"],
-		ignoreRoles: [{ id: "ignore-role-id", note: "テスト用無視ロール" }],
 	},
 } as unknown as AppContext;
 
@@ -61,8 +59,9 @@ describe("/room game", () => {
 			channel: null,
 		});
 		await handleGame(interaction, mockCtx);
-		expect(interaction.reply).toHaveBeenCalled();
-		expect(interaction.deferReply).not.toHaveBeenCalled();
+		expect(interaction.reply).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.stringContaining("サーバー内でのみ") }),
+		);
 	});
 
 	it("ルーム外から実行した場合はエラーを返す", async () => {

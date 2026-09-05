@@ -1,19 +1,12 @@
 import { type APIGuildMember, type GuildMember, GuildMemberRoleManager } from "discord.js";
 
 /**
- * Type guards for Discord.js types
+ * discord.js の型ガード
  */
 
 /**
- * Check if member has role manager (not API member)
+ * メンバーがロールマネージャーを持つ（APIGuildMember ではない）か確認
  */
 export function hasRoleManager(member: GuildMember | APIGuildMember): member is GuildMember {
 	return "roles" in member && member.roles instanceof GuildMemberRoleManager;
-}
-
-/**
- * Check if member has voice state
- */
-export function hasVoiceState(member: GuildMember | APIGuildMember): member is GuildMember {
-	return "voice" in member && typeof member.voice === "object";
 }

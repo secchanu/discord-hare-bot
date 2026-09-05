@@ -45,13 +45,6 @@ export class RoomManager {
 	}
 
 	/**
-	 * 全ルームを取得
-	 */
-	getAll(): Collection<Snowflake, Room> {
-		return this.rooms;
-	}
-
-	/**
 	 * スケジュールイベントIDからルームを検索
 	 */
 	findByEventId(eventId: Snowflake): Room | undefined {

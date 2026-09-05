@@ -1,46 +1,26 @@
 import { describe, expect, it } from "vitest";
-import { loadConfig, parseIgnoreRoles, validateConfig } from "./config";
+import { loadConfig, parseIgnoreRoleIds, validateConfig } from "./config";
 
-describe("parseIgnoreRoles", () => {
-	it("undefinedを渡した場合は空配列を返す", () => {
-		expect(parseIgnoreRoles(undefined)).toEqual([]);
+describe("parseIgnoreRoleIds", () => {
+	it("未設定の場合は空配列を返す", () => {
+		expect(parseIgnoreRoleIds(undefined)).toEqual([]);
+		expect(parseIgnoreRoleIds("")).toEqual([]);
 	});
 
-	it("空文字列を渡した場合は空配列を返す", () => {
-		expect(parseIgnoreRoles("")).toEqual([]);
+	it("カンマ区切りの各項目からIDを取り出す", () => {
+		expect(parseIgnoreRoleIds("111:管理者,222:モデレーター")).toEqual(["111", "222"]);
 	});
 
-	it("単一の id:note 形式をパースする", () => {
-		expect(parseIgnoreRoles("123456789:モデレーター")).toEqual([
-			{ id: "123456789", note: "モデレーター" },
-		]);
+	it("説明のない項目はそのままIDになる", () => {
+		expect(parseIgnoreRoleIds("123456789")).toEqual(["123456789"]);
 	});
 
-	it("複数の id:note 形式をカンマ区切りでパースする", () => {
-		expect(parseIgnoreRoles("111:管理者,222:モデレーター")).toEqual([
-			{ id: "111", note: "管理者" },
-			{ id: "222", note: "モデレーター" },
-		]);
+	it("IDの前後の空白を除去する", () => {
+		expect(parseIgnoreRoleIds(" 123 :ノート")).toEqual(["123"]);
 	});
 
-	it("コロンがない場合はnoteが空文字になる", () => {
-		expect(parseIgnoreRoles("123456789")).toEqual([{ id: "123456789", note: "" }]);
-	});
-
-	it("id の前後の空白を除去する", () => {
-		expect(parseIgnoreRoles(" 123 :ノート")).toEqual([{ id: "123", note: "ノート" }]);
-	});
-
-	it("note の前後の空白を除去する", () => {
-		expect(parseIgnoreRoles("123: ノート ")).toEqual([{ id: "123", note: "ノート" }]);
-	});
-
-	it("IDが空の項目は除外される", () => {
-		expect(parseIgnoreRoles(":ノート,123:有効")).toEqual([{ id: "123", note: "有効" }]);
-	});
-
-	it("noteにコロンが含まれる場合、最初のコロンで分割される", () => {
-		expect(parseIgnoreRoles("123:ノート:追記")).toEqual([{ id: "123", note: "ノート:追記" }]);
+	it("IDが空の項目は除外する", () => {
+		expect(parseIgnoreRoleIds(":ノート,123:有効")).toEqual(["123"]);
 	});
 });
 
@@ -60,7 +40,6 @@ describe("loadConfig", () => {
 			readyChannelId: "111",
 			wantedChannelId: "222",
 			ignoreRoleIds: ["333"],
-			ignoreRoles: [{ id: "333", note: "管理者" }],
 		});
 	});
 
@@ -73,7 +52,6 @@ describe("loadConfig", () => {
 			readyChannelId: "",
 			wantedChannelId: "",
 			ignoreRoleIds: [],
-			ignoreRoles: [],
 		});
 	});
 });
@@ -85,7 +63,6 @@ describe("validateConfig", () => {
 		readyChannelId: "111",
 		wantedChannelId: "222",
 		ignoreRoleIds: [],
-		ignoreRoles: [],
 	};
 
 	it("全必須フィールドが揃っている場合はエラーなし", () => {

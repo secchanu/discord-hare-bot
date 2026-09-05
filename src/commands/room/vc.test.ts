@@ -47,7 +47,6 @@ describe("/room vc", () => {
 			const interaction = makeInteraction(0);
 			await handleVc(interaction, mockCtx);
 			expect(mockRoom.setAdditionalVoiceChannels).toHaveBeenCalledWith(0);
-			expect(interaction.editReply).toHaveBeenCalledWith(expect.stringContaining("0"));
 		});
 
 		it("MAX を指定したとき、MAX がそのまま渡される", async () => {
@@ -73,7 +72,7 @@ describe("/room vc", () => {
 		});
 	});
 
-	it("正常に変更した場合は完了メッセージを返す（永続化はRoom側で行われる）", async () => {
+	it("正常に変更した場合は完了メッセージを返す", async () => {
 		const interaction = makeInteraction(3);
 		await handleVc(interaction, mockCtx);
 		expect(mockRoom.setAdditionalVoiceChannels).toHaveBeenCalledWith(3);

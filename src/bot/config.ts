@@ -3,61 +3,37 @@
  * 環境変数から読み込み、composition root（index.ts）で検証して注入する
  */
 
-interface IgnoreRole {
-	id: string;
-	note: string;
-}
-
 interface BotConfig {
 	botToken: string;
 	guildId: string;
 	readyChannelId: string;
 	wantedChannelId: string;
 	ignoreRoleIds: string[];
-	ignoreRoles: IgnoreRole[];
 }
 
 /**
- * 環境変数からignoreRolesをパース
+ * 環境変数から除外ロールIDをパース
+ * 形式は "id:説明,id:説明,..." で、説明は人が読むためのもののため読み捨てる
  */
-export function parseIgnoreRoles(envValue: string | undefined): IgnoreRole[] {
+export function parseIgnoreRoleIds(envValue: string | undefined): string[] {
 	if (!envValue) return [];
 
 	return envValue
 		.split(",")
-		.map((item) => {
-			const colonIndex = item.indexOf(":");
-			let id: string;
-			let note: string;
-
-			if (colonIndex === -1) {
-				// コロンがない場合
-				id = item.trim();
-				note = "";
-			} else {
-				// コロンがある場合、最初のコロンで分割
-				id = item.substring(0, colonIndex).trim();
-				note = item.substring(colonIndex + 1).trim();
-			}
-
-			return { id, note };
-		})
-		.filter((role) => role.id); // 空のIDは除外
+		.map((item) => item.split(":")[0].trim())
+		.filter((id) => id);
 }
 
 /**
  * 環境変数から設定を読み込み
  */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): BotConfig {
-	const ignoreRoles = parseIgnoreRoles(env.DISCORD_IGNORE_ROLES);
-
 	return {
 		botToken: env.DISCORD_BOT_TOKEN || "",
 		guildId: env.DISCORD_GUILD_ID || "",
 		readyChannelId: env.DISCORD_READY_CHANNEL_ID || "",
 		wantedChannelId: env.DISCORD_WANTED_CHANNEL_ID || "",
-		ignoreRoleIds: ignoreRoles.map((role) => role.id),
-		ignoreRoles: ignoreRoles,
+		ignoreRoleIds: parseIgnoreRoleIds(env.DISCORD_IGNORE_ROLES),
 	};
 }
 
@@ -87,4 +63,4 @@ export function validateConfig(config: BotConfig): string[] {
 	return errors;
 }
 
-export type { BotConfig, IgnoreRole };
+export type { BotConfig };

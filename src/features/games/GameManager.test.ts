@@ -6,7 +6,6 @@ import { defaultGame } from "./types";
 const mockStore = {
 	get: vi.fn(),
 	set: vi.fn(),
-	delete: vi.fn(),
 };
 
 function createManager(): GameManager {
@@ -133,17 +132,6 @@ describe("GameManager", () => {
 				name: "ゲームC",
 				data: {},
 			});
-		});
-	});
-
-	describe("deleteGame()", () => {
-		it("ストアからゲームを削除する", async () => {
-			mockStore.delete.mockResolvedValue(undefined);
-
-			const manager = createManager();
-			await manager.deleteGame("role-4");
-
-			expect(mockStore.delete).toHaveBeenCalledWith("role-4");
 		});
 	});
 });

@@ -1,17 +1,17 @@
-import type { ChatInputCommandInteraction, GuildMember } from "discord.js";
-import { isGuildInteraction } from "../helpers";
+import { type ChatInputCommandInteraction, type GuildMember, MessageFlags } from "discord.js";
+import { GUILD_ONLY_MESSAGE, isGuildInteraction } from "../helpers";
 
 /**
  * /rand member サブコマンド
  * VCメンバーからランダム選択
  */
 export async function handleMember(interaction: ChatInputCommandInteraction): Promise<void> {
-	await interaction.deferReply();
-
 	if (!isGuildInteraction(interaction)) {
-		await interaction.editReply("このコマンドはサーバー内でのみ使用できます。");
+		await interaction.reply({ content: GUILD_ONLY_MESSAGE, flags: MessageFlags.Ephemeral });
 		return;
 	}
+
+	await interaction.deferReply();
 
 	const channel = interaction.member.voice.channel;
 	if (!channel) {

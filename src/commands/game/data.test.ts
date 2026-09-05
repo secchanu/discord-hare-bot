@@ -5,7 +5,6 @@ import { handleData } from "./data";
 
 vi.mock("../../types/guards", () => ({
 	hasRoleManager: vi.fn().mockReturnValue(true),
-	hasVoiceState: vi.fn().mockReturnValue(true),
 }));
 
 const mockGameManager = {
@@ -18,7 +17,6 @@ const mockCtx = {
 	gameManager: mockGameManager,
 	config: {
 		ignoreRoleIds: ["ignore-role-id"],
-		ignoreRoles: [{ id: "ignore-role-id", note: "テスト用無視ロール" }],
 	},
 } as unknown as AppContext;
 
@@ -47,9 +45,10 @@ function makeModalInteraction(
 	};
 }
 
-function makeSelectInteraction(key: string, messageId: string = "msg-id") {
-	const modalInteraction = makeModalInteraction({ customId: `game_data_${messageId}` });
+function makeSelectInteraction(key: string, id: string = "select-id") {
+	const modalInteraction = makeModalInteraction({ customId: `game_data_${id}` });
 	return {
+		id,
 		values: [key],
 		showModal: vi.fn().mockResolvedValue(undefined),
 		awaitModalSubmit: vi.fn().mockResolvedValue(modalInteraction),
@@ -57,13 +56,35 @@ function makeSelectInteraction(key: string, messageId: string = "msg-id") {
 	};
 }
 
-function makeMessage(
-	selectInteraction: ReturnType<typeof makeSelectInteraction> | null,
-	messageId: string = "msg-id",
-) {
+/**
+ * セレクトメニューのコレクターを模したメッセージを生成する
+ * 渡した選択を順に collect し、送信で止まらなければ無操作タイムアウトで終了する
+ */
+function makeMessage(selectInteractions: Array<ReturnType<typeof makeSelectInteraction>>) {
+	const handlers: Record<string, (...args: never[]) => Promise<void>> = {};
+	const collector = {
+		ended: false,
+		on: vi.fn((event: string, handler: (...args: never[]) => Promise<void>) => {
+			handlers[event] = handler;
+			if (event === "end") void run();
+		}),
+		stop: vi.fn((reason: string) => {
+			if (collector.ended) return;
+			collector.ended = true;
+			void handlers.end?.(...([undefined, reason] as never[]));
+		}),
+	};
+	async function run() {
+		for (const selectInteraction of selectInteractions) {
+			if (collector.ended) return;
+			await handlers.collect?.(selectInteraction as never);
+		}
+		collector.stop("idle");
+	}
 	return {
-		id: messageId,
-		awaitMessageComponent: vi.fn().mockResolvedValue(selectInteraction),
+		id: "msg-id",
+		createMessageComponentCollector: vi.fn().mockReturnValue(collector),
+		edit: vi.fn().mockResolvedValue(undefined),
 	};
 }
 
@@ -77,7 +98,7 @@ function makeInteraction(
 ) {
 	const { roleId = "game-role-id", hasRole = true, inCachedGuild = true, message } = overrides;
 
-	const msg = message ?? makeMessage(makeSelectInteraction("新規作成"));
+	const msg = message ?? makeMessage([makeSelectInteraction("新規作成")]);
 
 	return {
 		inCachedGuild: vi.fn().mockReturnValue(inCachedGuild),
@@ -112,7 +133,7 @@ describe("/game data", () => {
 		mockGameManager.updateGameData.mockResolvedValue(undefined);
 	});
 
-	describe("UI状態分岐: ロールバリデーション", () => {
+	describe("ロールの検証", () => {
 		it("@everyone ロールは「選択できません」を返す", async () => {
 			const interaction = makeInteraction({ roleId: EVERYONE_ROLE_ID });
 			mockGameManager.getGame.mockResolvedValue(null);
@@ -140,12 +161,13 @@ describe("/game data", () => {
 		it("ギルド外から実行した場合はエラーを返す", async () => {
 			const interaction = makeInteraction({ inCachedGuild: false });
 			await handleData(interaction, mockCtx);
-			expect(interaction.reply).toHaveBeenCalled();
-			expect(interaction.deferReply).not.toHaveBeenCalled();
+			expect(interaction.reply).toHaveBeenCalledWith(
+				expect.objectContaining({ content: expect.stringContaining("サーバー内でのみ") }),
+			);
 		});
 	});
 
-	describe("ロジック: モーダル入力のデータ処理", () => {
+	describe("モーダル入力の保存", () => {
 		beforeEach(() => {
 			mockGameManager.getGame.mockResolvedValue({
 				id: "game-role-id",
@@ -164,7 +186,7 @@ describe("/game data", () => {
 			selectInteraction.awaitModalSubmit.mockResolvedValue(
 				makeModalInteraction({ key: "マップ", data: "  マップA  \n\n  マップB  \n" }),
 			);
-			const message = makeMessage(selectInteraction);
+			const message = makeMessage([selectInteraction]);
 			const interaction = makeInteraction({ message });
 
 			await handleData(interaction, mockCtx);
@@ -185,16 +207,15 @@ describe("/game data", () => {
 			selectInteraction.awaitModalSubmit.mockResolvedValue(
 				makeModalInteraction({ key: "マップ", data: "\n\n" }),
 			);
-			const message = makeMessage(selectInteraction);
+			const message = makeMessage([selectInteraction]);
 			const interaction = makeInteraction({ message });
 
 			await handleData(interaction, mockCtx);
 
-			// 削除処理: 古いキーをnullで更新
 			expect(mockGameManager.updateGameData).toHaveBeenCalledWith("game-role-id", "マップ", null);
 		});
 
-		it("キー名変更時: 旧キー削除 → 新キーで作成の2ステップになる", async () => {
+		it("キー名変更時: 旧キーを削除し、新キーで作成する", async () => {
 			mockGameManager.getGame.mockResolvedValue({
 				id: "game-role-id",
 				name: "ゲームA",
@@ -204,14 +225,12 @@ describe("/game data", () => {
 			selectInteraction.awaitModalSubmit.mockResolvedValue(
 				makeModalInteraction({ key: "新キー", data: "item1\nitem2" }),
 			);
-			const message = makeMessage(selectInteraction);
+			const message = makeMessage([selectInteraction]);
 			const interaction = makeInteraction({ message });
 
 			await handleData(interaction, mockCtx);
 
-			// 旧キーを削除
 			expect(mockGameManager.updateGameData).toHaveBeenCalledWith("game-role-id", "旧キー", null);
-			// 新キーで作成
 			expect(mockGameManager.updateGameData).toHaveBeenCalledWith("game-role-id", "新キー", [
 				"item1",
 				"item2",
@@ -219,7 +238,7 @@ describe("/game data", () => {
 		});
 	});
 
-	describe("UI状態分岐: 操作結果メッセージ", () => {
+	describe("操作結果の表示", () => {
 		beforeEach(() => {
 			mockGameManager.createGame.mockResolvedValue({
 				id: "game-role-id",
@@ -228,9 +247,7 @@ describe("/game data", () => {
 			});
 		});
 
-		// 結果メッセージは元コマンドのトークン（15分で失効）ではなく
-		// モーダル側のインタラクションで編集される
-		it("データ削除時: 「削除しました」メッセージ", async () => {
+		it("データを空にして送信した場合は削除したことを表示する", async () => {
 			mockGameManager.getGame.mockResolvedValue({
 				id: "game-role-id",
 				name: "ゲームA",
@@ -239,7 +256,7 @@ describe("/game data", () => {
 			const selectInteraction = makeSelectInteraction("マップ");
 			const modalInteraction = makeModalInteraction({ key: "マップ", data: "" });
 			selectInteraction.awaitModalSubmit.mockResolvedValue(modalInteraction);
-			const message = makeMessage(selectInteraction);
+			const message = makeMessage([selectInteraction]);
 			const interaction = makeInteraction({ message });
 
 			await handleData(interaction, mockCtx);
@@ -249,7 +266,7 @@ describe("/game data", () => {
 			);
 		});
 
-		it("キー名変更を伴う更新時: 「○○を△△に更新しました」メッセージ", async () => {
+		it("データ名を変えて送信した場合は変更前後のデータ名を表示する", async () => {
 			mockGameManager.getGame.mockResolvedValue({
 				id: "game-role-id",
 				name: "ゲームA",
@@ -258,7 +275,7 @@ describe("/game data", () => {
 			const selectInteraction = makeSelectInteraction("旧キー");
 			const modalInteraction = makeModalInteraction({ key: "新キー", data: "item1\nitem2" });
 			selectInteraction.awaitModalSubmit.mockResolvedValue(modalInteraction);
-			const message = makeMessage(selectInteraction);
+			const message = makeMessage([selectInteraction]);
 			const interaction = makeInteraction({ message });
 
 			await handleData(interaction, mockCtx);
@@ -270,7 +287,7 @@ describe("/game data", () => {
 			);
 		});
 
-		it("キー名変更なしの更新時: 「更新しました」メッセージ", async () => {
+		it("既存のデータを送信した場合は更新したことを表示する", async () => {
 			mockGameManager.getGame.mockResolvedValue({
 				id: "game-role-id",
 				name: "ゲームA",
@@ -279,7 +296,7 @@ describe("/game data", () => {
 			const selectInteraction = makeSelectInteraction("マップ");
 			const modalInteraction = makeModalInteraction({ key: "マップ", data: "マップA\nマップB" });
 			selectInteraction.awaitModalSubmit.mockResolvedValue(modalInteraction);
-			const message = makeMessage(selectInteraction);
+			const message = makeMessage([selectInteraction]);
 			const interaction = makeInteraction({ message });
 
 			await handleData(interaction, mockCtx);
@@ -289,7 +306,7 @@ describe("/game data", () => {
 			);
 		});
 
-		it("新規作成時: 「作成しました」メッセージ", async () => {
+		it("新規作成を送信した場合は作成したことを表示する", async () => {
 			mockGameManager.getGame.mockResolvedValue({
 				id: "game-role-id",
 				name: "ゲームA",
@@ -298,7 +315,7 @@ describe("/game data", () => {
 			const selectInteraction = makeSelectInteraction("新規作成");
 			const modalInteraction = makeModalInteraction({ key: "新データ", data: "item1\nitem2" });
 			selectInteraction.awaitModalSubmit.mockResolvedValue(modalInteraction);
-			const message = makeMessage(selectInteraction);
+			const message = makeMessage([selectInteraction]);
 			const interaction = makeInteraction({ message });
 
 			await handleData(interaction, mockCtx);
@@ -319,7 +336,7 @@ describe("/game data", () => {
 			selectInteraction.awaitModalSubmit.mockResolvedValue(
 				makeModalInteraction({ key: "新データ", data: "item1" }),
 			);
-			const message = makeMessage(selectInteraction);
+			const message = makeMessage([selectInteraction]);
 			const interaction = makeInteraction({ message });
 
 			await handleData(interaction, mockCtx);
@@ -336,12 +353,84 @@ describe("/game data", () => {
 			});
 			const selectInteraction = makeSelectInteraction("新規作成");
 			selectInteraction.awaitModalSubmit.mockResolvedValue(null);
-			const message = makeMessage(selectInteraction);
+			const message = makeMessage([selectInteraction]);
 			const interaction = makeInteraction({ message });
 
 			await handleData(interaction, mockCtx);
 
 			expect(mockGameManager.updateGameData).not.toHaveBeenCalled();
+		});
+
+		it("モーダル表示後はセレクトメニューを未選択の状態で描き直す", async () => {
+			mockGameManager.getGame.mockResolvedValue({
+				id: "game-role-id",
+				name: "ゲームA",
+				data: {},
+			});
+			const selectInteraction = makeSelectInteraction("新規作成");
+			selectInteraction.awaitModalSubmit.mockResolvedValue(null);
+			const message = makeMessage([selectInteraction]);
+			const interaction = makeInteraction({ message });
+
+			await handleData(interaction, mockCtx);
+
+			const editArgs = message.edit.mock.calls[0][0] as {
+				components: Array<{
+					components: Array<{
+						data: { custom_id: string };
+						options: Array<{ data: { default?: boolean } }>;
+					}>;
+				}>;
+			};
+			const select = editArgs.components[0].components[0];
+			expect(select.data.custom_id).toBe("data_key");
+			expect(select.options.some((o) => o.data.default === true)).toBe(false);
+		});
+
+		it("モーダルをキャンセルして選び直した場合、送信されたモーダルの内容で保存する", async () => {
+			mockGameManager.getGame.mockResolvedValue({
+				id: "game-role-id",
+				name: "ゲームA",
+				data: { マップ: ["マップA"], キャラ: ["キャラA"] },
+			});
+			const cancelled = makeSelectInteraction("マップ", "select-1");
+			cancelled.awaitModalSubmit.mockResolvedValue(null);
+			const reselected = makeSelectInteraction("キャラ", "select-2");
+			reselected.awaitModalSubmit.mockResolvedValue(
+				makeModalInteraction({ key: "キャラ", data: "キャラA\nキャラB" }),
+			);
+			const message = makeMessage([cancelled, reselected]);
+			const interaction = makeInteraction({ message });
+
+			await handleData(interaction, mockCtx);
+
+			expect(reselected.showModal).toHaveBeenCalledOnce();
+			expect(mockGameManager.updateGameData).toHaveBeenCalledWith("game-role-id", "キャラ", [
+				"キャラA",
+				"キャラB",
+			]);
+			expect(mockGameManager.updateGameData).not.toHaveBeenCalledWith(
+				"game-role-id",
+				"マップ",
+				expect.anything(),
+			);
+		});
+
+		it("選択がないまま無操作時間が過ぎた場合はタイムアウトを表示してメニューを取り除く", async () => {
+			mockGameManager.getGame.mockResolvedValue({
+				id: "game-role-id",
+				name: "ゲームA",
+				data: {},
+			});
+			const message = makeMessage([]);
+			const interaction = makeInteraction({ message });
+
+			await handleData(interaction, mockCtx);
+
+			expect(message.edit).toHaveBeenLastCalledWith({
+				content: expect.stringContaining("タイムアウト"),
+				components: [],
+			});
 		});
 	});
 });

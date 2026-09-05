@@ -1,5 +1,6 @@
 import type { ChatInputCommandInteraction } from "discord.js";
 import type { AppContext } from "../../bot/context";
+import { ROOM_ONLY_MESSAGE } from "../helpers";
 import { getRoomFromTextChannel } from "../helpers/room";
 
 /**
@@ -14,7 +15,7 @@ export async function handleSync(
 
 	const room = getRoomFromTextChannel(interaction, ctx.roomManager);
 	if (!room) {
-		await interaction.editReply("このコマンドはルーム内でのみ使用できます。");
+		await interaction.editReply(ROOM_ONLY_MESSAGE);
 		return;
 	}
 
@@ -24,7 +25,7 @@ export async function handleSync(
 		await room.syncTextChannelPermissions();
 		await interaction.editReply("専用チャットを部屋のメンバーに同期しました");
 	} catch (error) {
-		console.error("Failed to sync text channel:", error);
-		await interaction.editReply("同期中にエラーが発生しました。");
+		console.error("[room sync] Failed to sync text channel:", error);
+		await interaction.editReply("同期中にエラーが発生しました");
 	}
 }

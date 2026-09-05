@@ -5,6 +5,7 @@ import {
 	inlineCode,
 	MessageFlags,
 	ModalBuilder,
+	type ModalSubmitInteraction,
 	type Role,
 	StringSelectMenuBuilder,
 	TextInputBuilder,
@@ -12,8 +13,14 @@ import {
 } from "discord.js";
 import type { AppContext } from "../../bot/context";
 import { DISCORD_LIMITS, TIMEOUT } from "../../constants";
-import { hasRoleManager } from "../../types/guards";
-import { isGuildInteraction } from "../helpers";
+import {
+	clearComponents,
+	createCommandUserFilter,
+	GUILD_ONLY_MESSAGE,
+	isGuildInteraction,
+	TIMEOUT_MESSAGE,
+} from "../helpers";
+import { getGameRoleError, INVALID_GAME_ROLE_MESSAGE } from "../helpers/game";
 
 /**
  * /game data サブコマンド
@@ -24,41 +31,28 @@ export async function handleData(
 	ctx: AppContext,
 ): Promise<void> {
 	if (!isGuildInteraction(interaction)) {
-		await interaction.reply({
-			content: "このコマンドはサーバー内でのみ使用できます。",
-			flags: MessageFlags.Ephemeral,
-		});
+		await interaction.reply({ content: GUILD_ONLY_MESSAGE, flags: MessageFlags.Ephemeral });
 		return;
 	}
 
 	await interaction.deferReply();
 
+	// @everyone はデフォルトゲームのため編集できない
 	const role = interaction.options.getRole("game", true) as Role;
-	const everyoneRoleId = interaction.guild.roles.everyone.id;
+	const roleError =
+		role.id === interaction.guild.roles.everyone.id
+			? INVALID_GAME_ROLE_MESSAGE
+			: getGameRoleError(interaction, role, ctx);
+	if (roleError) {
+		await interaction.editReply(roleError);
+		return;
+	}
+
 	const roleId = role.id;
-
-	// 無効なロールチェック
-	if (roleId === everyoneRoleId || ctx.config.ignoreRoleIds.includes(roleId)) {
-		await interaction.editReply("このロールはゲームとして選択できません");
-		return;
-	}
-
-	// メンバーがロールを持っているかチェック
-	if (!hasRoleManager(interaction.member) || !interaction.member.roles.cache.has(roleId)) {
-		await interaction.editReply(
-			"このゲームは付与されていないため選択できません\n先に<id:customize>からプレイするゲームとして選択してください",
-		);
-		return;
-	}
-
 	const gameManager = ctx.gameManager;
-	let game = await gameManager.getGame(roleId);
+	const game = (await gameManager.getGame(roleId)) ?? (await gameManager.createGame(role));
 
-	// ゲームが存在しない場合は作成
-	if (!game) {
-		game = await gameManager.createGame(role);
-	}
-
+	const gameName = game.name;
 	const gameData = game.data;
 
 	// データ選択メニュー
@@ -75,117 +69,134 @@ export async function handleData(
 	const selectRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu);
 
 	const message = await interaction.editReply({
-		content: `${game.name}: 編集するデータを選択してください`,
+		content: `${gameName}: 編集するデータを選択してください`,
 		components: [selectRow],
 	});
 
-	// データ選択を待つ
-	const selectInteraction = await message
-		.awaitMessageComponent({
-			componentType: ComponentType.StringSelect,
-			filter: (i) => i.user.id === interaction.user.id,
-			time: TIMEOUT.INTERACTION,
-		})
-		.catch(() => null);
+	/**
+	 * モーダルの入力内容でゲームデータを更新し、結果を表示する
+	 */
+	const saveData = async (
+		modalInteraction: ModalSubmitInteraction,
+		dataKey: string,
+		exists: boolean,
+	) => {
+		await modalInteraction.deferUpdate();
 
-	if (!selectInteraction) {
-		await interaction.editReply({
-			content: "タイムアウトしました",
-			components: [],
-		});
-		return;
-	}
+		const newKey = modalInteraction.fields.getTextInputValue("key").trim();
+		const newData = modalInteraction.fields
+			.getTextInputValue("data")
+			.split("\n")
+			.map((d) => d.trim())
+			.filter((d) => d);
 
-	const dataKey = selectInteraction.values[0];
-	const isExist = dataKey !== "新規作成" && dataKey in gameData;
-	const items = isExist ? gameData[dataKey] : [];
-
-	// モーダルで編集
-	const modal = new ModalBuilder()
-		.setCustomId(`game_data_${message.id}`)
-		.setTitle(`${game.name}: ゲームデータの編集`)
-		.addComponents(
-			new ActionRowBuilder<TextInputBuilder>().addComponents(
-				new TextInputBuilder()
-					.setCustomId("key")
-					.setLabel("データ名")
-					.setStyle(TextInputStyle.Short)
-					.setValue(isExist ? dataKey : "")
-					.setRequired(true),
-			),
-			new ActionRowBuilder<TextInputBuilder>().addComponents(
-				new TextInputBuilder()
-					.setCustomId("data")
-					.setLabel("データ（改行区切り）")
-					.setStyle(TextInputStyle.Paragraph)
-					.setValue(items.join("\n"))
-					.setRequired(false),
-			),
-		);
-
-	await selectInteraction.showModal(modal);
-
-	// モーダル送信を待つ
-	const modalInteraction = await selectInteraction
-		.awaitModalSubmit({
-			filter: (i) => i.user.id === interaction.user.id && i.customId === modal.data.custom_id,
-			time: TIMEOUT.MODAL_SUBMIT,
-		})
-		.catch(() => null);
-
-	if (!modalInteraction) return;
-
-	await modalInteraction.deferUpdate();
-
-	const newKey = modalInteraction.fields.getTextInputValue("key").trim();
-	const newData = modalInteraction.fields
-		.getTextInputValue("data")
-		.split("\n")
-		.map((d) => d.trim())
-		.filter((d) => d);
-
-	// 元のコマンドのインタラクショントークンは15分で失効するため、
-	// モーダル送信（最大1時間待つ）以降の編集はモーダル側のインタラクションで行う
-	if (!newKey) {
-		await modalInteraction.editReply({
-			content: `${game.name}: データ名が入力されていません`,
-			components: [],
-		});
-		return;
-	}
-
-	// データを更新
-	if (!newData.length) {
-		// データ削除
-		await gameManager.updateGameData(roleId, newKey, null);
-		await modalInteraction.editReply({
-			content: `${game.name}: 「${newKey}」のデータを削除しました`,
-			components: [],
-		});
-	} else if (isExist) {
-		// データ更新
-		await gameManager.updateGameData(roleId, dataKey, null); // 古いキーを削除
-		await gameManager.updateGameData(roleId, newKey, newData);
-
-		const update = inlineCode(newData.join(", "));
-		if (dataKey !== newKey) {
+		// 元のコマンドのインタラクショントークンは15分で失効するため、
+		// モーダル送信（最大1時間待つ）以降の編集はモーダル側のインタラクションで行う
+		if (!newKey) {
 			await modalInteraction.editReply({
-				content: `${game.name}: 「${dataKey}」のデータを「${newKey}」に更新しました\n${update}`,
+				content: `${gameName}: データ名が入力されていません`,
 				components: [],
 			});
-		} else {
-			await modalInteraction.editReply({
-				content: `${game.name}: 「${newKey}」のデータを更新しました\n${update}`,
-				components: [],
-			});
+			return;
 		}
-	} else {
-		// データ作成
-		await gameManager.updateGameData(roleId, newKey, newData);
+
+		if (!newData.length) {
+			// データ削除
+			await gameManager.updateGameData(roleId, newKey, null);
+			await modalInteraction.editReply({
+				content: `${gameName}: 「${newKey}」のデータを削除しました`,
+				components: [],
+			});
+			return;
+		}
+
 		const update = inlineCode(newData.join(", "));
-		await modalInteraction.editReply({
-			content: `${game.name}: 「${newKey}」のデータを作成しました\n${update}`,
-			components: [],
+		if (!exists) {
+			// データ作成
+			await gameManager.updateGameData(roleId, newKey, newData);
+			await modalInteraction.editReply({
+				content: `${gameName}: 「${newKey}」のデータを作成しました\n${update}`,
+				components: [],
+			});
+			return;
+		}
+
+		// データ更新（データ名が変わった場合は古いデータ名を削除する）
+		await gameManager.updateGameData(roleId, dataKey, null);
+		await gameManager.updateGameData(roleId, newKey, newData);
+		const content =
+			dataKey === newKey
+				? `${gameName}: 「${newKey}」のデータを更新しました\n${update}`
+				: `${gameName}: 「${dataKey}」のデータを「${newKey}」に更新しました\n${update}`;
+		await modalInteraction.editReply({ content, components: [] });
+	};
+
+	// データ選択を待つ。
+	// モーダルのキャンセルは通知されないため、送信されるまでメニューを残して選び直せるようにする
+	const collector = message.createMessageComponentCollector({
+		componentType: ComponentType.StringSelect,
+		filter: createCommandUserFilter(interaction.user.id),
+		idle: TIMEOUT.INTERACTION,
+	});
+
+	let submitted = false;
+
+	await new Promise<void>((resolve) => {
+		collector.on("collect", async (selectInteraction) => {
+			const dataKey = selectInteraction.values[0];
+			const exists = dataKey !== "新規作成" && dataKey in gameData;
+			const items = exists ? gameData[dataKey] : [];
+
+			// モーダルで編集
+			const modal = new ModalBuilder()
+				.setCustomId(`game_data_${selectInteraction.id}`)
+				.setTitle(`${gameName}: ゲームデータの編集`)
+				.addComponents(
+					new ActionRowBuilder<TextInputBuilder>().addComponents(
+						new TextInputBuilder()
+							.setCustomId("key")
+							.setLabel("データ名")
+							.setStyle(TextInputStyle.Short)
+							.setValue(exists ? dataKey : "")
+							.setRequired(true),
+					),
+					new ActionRowBuilder<TextInputBuilder>().addComponents(
+						new TextInputBuilder()
+							.setCustomId("data")
+							.setLabel("データ（改行区切り）")
+							.setStyle(TextInputStyle.Paragraph)
+							.setValue(items.join("\n"))
+							.setRequired(false),
+					),
+				);
+
+			await selectInteraction.showModal(modal);
+
+			// メニューを描き直して選択状態を戻し、同じデータも選び直せるようにする
+			if (!collector.ended) {
+				await message.edit({ components: [selectRow] });
+			}
+
+			// モーダル送信を待つ
+			const modalInteraction = await selectInteraction
+				.awaitModalSubmit({
+					filter: (i) => i.user.id === interaction.user.id && i.customId === modal.data.custom_id,
+					time: TIMEOUT.MODAL_SUBMIT,
+				})
+				.catch(() => null);
+
+			if (!modalInteraction || submitted) return;
+			submitted = true;
+			collector.stop("submit");
+
+			await saveData(modalInteraction, dataKey, exists);
+			resolve();
 		});
-	}
+
+		collector.on("end", async (_collected, reason) => {
+			if (reason === "submit") return;
+			await clearComponents(message, TIMEOUT_MESSAGE);
+			resolve();
+		});
+	});
 }

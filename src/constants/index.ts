@@ -13,7 +13,6 @@ export const TIME = {
 	SECOND: 1000,
 	MINUTE: 60 * 1000,
 	HOUR: 60 * 60 * 1000,
-	SIX_HOURS: 6 * 60 * 60 * 1000,
 } as const;
 
 // Discord制限
@@ -24,9 +23,12 @@ export const DISCORD_LIMITS = {
 
 // タイムアウト
 export const TIMEOUT = {
-	INTERACTION: TIME.MINUTE, // インタラクションのタイムアウト
-	MODAL_SUBMIT: TIME.HOUR, // モーダル送信のタイムアウト
-	GAME_WANTED_MESSAGE: TIME.SIX_HOURS, // ゲーム募集メッセージの有効期限
+	// セレクトメニューの選択待ち
+	INTERACTION: TIME.MINUTE,
+	// モーダルの送信待ち
+	MODAL_SUBMIT: TIME.HOUR,
+	// ルーム作成時に初期ゲームの判定に使う募集メッセージの有効期限
+	GAME_WANTED_MESSAGE: 6 * TIME.HOUR,
 	// セッションUI（ボタン操作）の無操作タイムアウト。
 	// 15分（インタラクショントークンの有効期限）を超えるため、
 	// メッセージ編集はコンポーネント側のインタラクションで行うこと

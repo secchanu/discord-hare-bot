@@ -1,6 +1,7 @@
 import type { ChatInputCommandInteraction } from "discord.js";
 import type { AppContext } from "../../bot/context";
 import { DISCORD_LIMITS } from "../../constants";
+import { ROOM_ONLY_MESSAGE } from "../helpers";
 import { getRoomFromTextChannel } from "../helpers/room";
 
 /**
@@ -15,7 +16,7 @@ export async function handleVc(
 
 	const room = getRoomFromTextChannel(interaction, ctx.roomManager);
 	if (!room) {
-		await interaction.editReply("このコマンドはルーム内でのみ使用できます。");
+		await interaction.editReply(ROOM_ONLY_MESSAGE);
 		return;
 	}
 
@@ -28,7 +29,7 @@ export async function handleVc(
 		await room.setAdditionalVoiceChannels(count);
 		await interaction.editReply(`追加VC数を${count}に変更しました`);
 	} catch (error) {
-		console.error("Failed to update additional VCs:", error);
-		await interaction.editReply("VC数の変更中にエラーが発生しました。");
+		console.error("[room vc] Failed to update additional VCs:", error);
+		await interaction.editReply("VC数の変更中にエラーが発生しました");
 	}
 }

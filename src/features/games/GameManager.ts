@@ -56,11 +56,4 @@ export class GameManager {
 
 		await this.store.set(roleId, game);
 	}
-
-	/**
-	 * ゲームを削除
-	 */
-	async deleteGame(roleId: Snowflake): Promise<void> {
-		await this.store.delete(roleId);
-	}
 }

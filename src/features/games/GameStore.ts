@@ -25,11 +25,4 @@ export class GameStore {
 	async get(roleId: Snowflake): Promise<Game | undefined> {
 		return this.store.get(roleId);
 	}
-
-	/**
-	 * ゲームを削除
-	 */
-	async delete(roleId: Snowflake): Promise<void> {
-		this.store.delete(roleId);
-	}
 }

@@ -273,7 +273,7 @@ describe("Room", () => {
 			expect(room.toData().gameId).toBe("game-role-id");
 		});
 
-		it("createdAt が保存データから復元される（保存のたびに更新されない）", () => {
+		it("createdAt が保存データから復元される", () => {
 			const game: Game = { id: "game-role-id", name: "ApexLegends", data: {} };
 			const room = Room.fromData(mockGuild, baseData, game, hooks);
 
@@ -732,7 +732,7 @@ describe("Room", () => {
 	// Room.callMembers()
 	// -----------------------------------------------------------------------
 	describe("callMembers()", () => {
-		it("全メンバー分 moveMembers() が呼ばれ、全員の処理が完了してから関数が返る", async () => {
+		it("全メンバーが指定インデックスのVCに移動される", async () => {
 			const setChannel1 = vi.fn().mockResolvedValue(undefined);
 			const setChannel2 = vi.fn().mockResolvedValue(undefined);
 			const member1 = {

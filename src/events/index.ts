@@ -14,13 +14,13 @@ import { setupVoiceStateUpdateHandler } from "./voiceStateUpdate";
  * 全てのイベントハンドラーを登録
  */
 export const registerEventHandlers = (client: Client, ctx: AppContext): void => {
-	// Core events
+	// 基本イベント
 	setupReadyHandler(client, ctx);
 	setupInteractionCreateHandler(client, ctx);
 	setupVoiceStateUpdateHandler(client, ctx);
 	setupMessageCreateHandler(client, ctx);
 
-	// Guild Scheduled Event handlers
+	// スケジュールイベント連携
 	setupGuildScheduledEventCreateHandler(client, ctx);
 	setupGuildScheduledEventUpdateHandler(client, ctx);
 	setupGuildScheduledEventDeleteHandler(client, ctx);

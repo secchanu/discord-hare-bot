@@ -1,6 +1,7 @@
 import { Collection } from "discord.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppContext } from "../bot/context";
+import { DISCORD_LIMITS } from "../constants";
 
 vi.mock("./helpers/room");
 
@@ -15,6 +16,7 @@ const mockCtx = { roomManager: {} } as unknown as AppContext;
 function createMockMember(id: string) {
 	return {
 		id,
+		displayName: `member-${id}`,
 		user: { bot: false, id },
 		toString: () => `<@${id}>`,
 		voice: { channel: null },
@@ -74,7 +76,9 @@ function setupInteraction(
 				},
 			},
 		},
-		options: { getInteger: vi.fn().mockReturnValue(teamNumber) },
+		options: {
+			getInteger: vi.fn().mockReturnValue(teamNumber),
+		},
 		deferReply: vi.fn().mockResolvedValue(undefined),
 		editReply: vi.fn().mockResolvedValue(mockMessage),
 		deleteReply: vi.fn().mockResolvedValue(undefined),
@@ -102,12 +106,12 @@ function createMockRoom() {
 	};
 }
 
-describe("/team（ロジック）", () => {
+describe("/team（チーム分け）", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 	});
 
-	it("チーム数はメンバー数を上限にクランプされる（メンバー3人でチーム数5を指定 → 3チーム）", async () => {
+	it("チーム数はメンバー数を上限にクランプされる", async () => {
 		const { mockInteraction } = setupInteraction(["1", "2", "3"], 5, createMockRoom());
 
 		await teamCommand.execute(mockInteraction as never, mockCtx);
@@ -116,7 +120,6 @@ describe("/team（ロジック）", () => {
 			content: string;
 			components: unknown[];
 		};
-		// 3チームのみが表示される（5チームではない）
 		expect(editReplyCall.content).toContain("チーム1");
 		expect(editReplyCall.content).toContain("チーム2");
 		expect(editReplyCall.content).toContain("チーム3");
@@ -132,13 +135,12 @@ describe("/team（ロジック）", () => {
 		const editReplyCall = mockInteraction.editReply.mock.calls[0][0] as {
 			content: string;
 		};
-		// 4人全員がチームのどこかに表示される
 		for (const id of ["1", "2", "3", "4"]) {
 			expect(editReplyCall.content).toContain(`<@${id}>`);
 		}
 	});
 
-	it("チーム間のメンバー数の差が1以下になる（5人を2チームに分割）", async () => {
+	it("チーム間のメンバー数の差が1以下になる", async () => {
 		const { mockInteraction } = setupInteraction(["1", "2", "3", "4", "5"], 2, createMockRoom());
 
 		await teamCommand.execute(mockInteraction as never, mockCtx);
@@ -146,31 +148,181 @@ describe("/team（ロジック）", () => {
 		const editReplyCall = mockInteraction.editReply.mock.calls[0][0] as {
 			content: string;
 		};
-		// チーム1とチーム2が存在し、かつ5人全員が含まれる
-		expect(editReplyCall.content).toContain("チーム1");
-		expect(editReplyCall.content).toContain("チーム2");
-		const totalMentions = (editReplyCall.content.match(/<@\d+>/g) ?? []).length;
-		expect(totalMentions).toBe(5);
+		const teamSizes = editReplyCall.content
+			.split("\n\n")
+			.map((team) => (team.match(/<@\d+>/g) ?? []).length);
+		expect(teamSizes).toHaveLength(2);
+		expect(Math.max(...teamSizes) - Math.min(...teamSizes)).toBeLessThanOrEqual(1);
+	});
+
+	it("VCのメンバーが2人未満の場合はエラーを返す", async () => {
+		const { mockInteraction } = setupInteraction(["1"], 2, createMockRoom());
+
+		await teamCommand.execute(mockInteraction as never, mockCtx);
+
+		expect(mockInteraction.editReply).toHaveBeenCalledWith(expect.stringContaining("2人以上"));
 	});
 });
 
-describe("/team（UI状態分岐）", () => {
+describe("/team（除外メニュー）", () => {
 	/**
-	 * 共通のセットアップ: 4人メンバー、ルームあり
+	 * 除外メニュー操作のインタラクションを生成するヘルパー
 	 */
-	async function setupTeamCommand(teamNumber = 2) {
-		const setup = setupInteraction(["1", "2", "3", "4"], teamNumber, createMockRoom());
+	function createExcludeInteraction(values: string[]) {
+		return {
+			customId: "exclude",
+			values,
+			isStringSelectMenu: () => true,
+			update: vi.fn().mockResolvedValue(undefined),
+			followUp: vi.fn().mockResolvedValue(undefined),
+			user: { id: "user-1" },
+		};
+	}
 
-		await teamCommand.execute(setup.mockInteraction as never, mockCtx);
-
-		return setup;
+	/**
+	 * 最後の update 呼び出しの引数を返すヘルパー
+	 */
+	function lastUpdateArgs(interaction: { update: ReturnType<typeof vi.fn> }) {
+		return interaction.update.mock.lastCall![0] as {
+			content: string;
+			components: Array<{
+				components: Array<{ options: Array<{ data: { value: string; default?: boolean } }> }>;
+			}>;
+		};
 	}
 
 	beforeEach(() => {
 		vi.clearAllMocks();
 	});
 
-	it("初期表示: チーム一覧 + cancel/confirm/rerollボタンが表示される", async () => {
+	it("初期表示: 除外メニューにVCの全メンバーが並ぶ", async () => {
+		const { mockInteraction } = setupInteraction(["1", "2", "3"], 2, createMockRoom());
+
+		await teamCommand.execute(mockInteraction as never, mockCtx);
+
+		const editReplyCall = mockInteraction.editReply.mock.calls[0][0] as {
+			components: Array<{
+				components: Array<{
+					data: { custom_id: string };
+					options: Array<{ data: { value: string } }>;
+				}>;
+			}>;
+		};
+		const select = editReplyCall.components[0].components[0];
+		expect(select.data.custom_id).toBe("exclude");
+		expect(select.options.map((o) => o.data.value)).toEqual(["1", "2", "3"]);
+	});
+
+	it("選んだメンバーはチーム分けから外れ、除外として表示される", async () => {
+		const { mockInteraction, getCollectHandler } = setupInteraction(
+			["1", "2", "3", "4"],
+			2,
+			createMockRoom(),
+		);
+		await teamCommand.execute(mockInteraction as never, mockCtx);
+
+		const excludeInteraction = createExcludeInteraction(["2", "4"]);
+		await getCollectHandler()!(excludeInteraction);
+
+		const [teamList, excludedLine] = lastUpdateArgs(excludeInteraction).content.split("\n\n除外: ");
+		expect(teamList).toContain("<@1>");
+		expect(teamList).toContain("<@3>");
+		expect(teamList).not.toContain("<@2>");
+		expect(teamList).not.toContain("<@4>");
+		expect(excludedLine).toBe("<@2> <@4>");
+	});
+
+	it("残りが2人未満になる選択は受け付けず、操作者にエラーを返す", async () => {
+		const { mockInteraction, getCollectHandler } = setupInteraction(
+			["1", "2", "3"],
+			2,
+			createMockRoom(),
+		);
+		await teamCommand.execute(mockInteraction as never, mockCtx);
+
+		const excludeInteraction = createExcludeInteraction(["2", "3"]);
+		await getCollectHandler()!(excludeInteraction);
+
+		const content = lastUpdateArgs(excludeInteraction).content;
+		for (const id of ["1", "2", "3"]) {
+			expect(content).toContain(`<@${id}>`);
+		}
+		expect(content).not.toContain("除外");
+		expect(excludeInteraction.followUp).toHaveBeenCalledWith(
+			expect.objectContaining({ content: expect.stringContaining("2人以上") }),
+		);
+	});
+
+	it("再抽選しても除外は維持される", async () => {
+		const { mockInteraction, getCollectHandler } = setupInteraction(
+			["1", "2", "3", "4"],
+			2,
+			createMockRoom(),
+		);
+		await teamCommand.execute(mockInteraction as never, mockCtx);
+		await getCollectHandler()!(createExcludeInteraction(["4"]));
+
+		const rerollInteraction = {
+			customId: "reroll",
+			update: vi.fn().mockResolvedValue(undefined),
+			user: { id: "user-1" },
+		};
+		await getCollectHandler()!(rerollInteraction);
+
+		const [teamList, excludedLine] = lastUpdateArgs(rerollInteraction).content.split("\n\n除外: ");
+		expect(teamList).not.toContain("<@4>");
+		expect(excludedLine).toBe("<@4>");
+	});
+
+	it("除外後のメニューは除外したメンバーだけが選択済みになる", async () => {
+		const { mockInteraction, getCollectHandler } = setupInteraction(
+			["1", "2", "3", "4"],
+			2,
+			createMockRoom(),
+		);
+		await teamCommand.execute(mockInteraction as never, mockCtx);
+
+		const excludeInteraction = createExcludeInteraction(["4"]);
+		await getCollectHandler()!(excludeInteraction);
+
+		const options = lastUpdateArgs(excludeInteraction).components[0].components[0].options;
+		const selected = options.filter((o) => o.data.default === true).map((o) => o.data.value);
+		expect(selected).toEqual(["4"]);
+	});
+
+	it("VCのメンバーが上限を超えるとき、メニューには先頭の上限人数だけが並ぶ", async () => {
+		const limit = DISCORD_LIMITS.MAX_SELECT_MENU_OPTIONS;
+		const ids = Array.from({ length: limit + 1 }, (_, i) => String(i + 1));
+		const { mockInteraction } = setupInteraction(ids, 2, createMockRoom());
+
+		await teamCommand.execute(mockInteraction as never, mockCtx);
+
+		const editReplyCall = mockInteraction.editReply.mock.calls[0][0] as {
+			components: Array<{ components: Array<{ options: Array<{ data: { value: string } }> }> }>;
+		};
+		const values = editReplyCall.components[0].components[0].options.map((o) => o.data.value);
+		expect(values).toEqual(ids.slice(0, limit));
+	});
+});
+
+describe("/team（ボタン操作）", () => {
+	/**
+	 * 共通のセットアップ: 4人メンバー、ルームあり
+	 */
+	async function setupTeamCommand(teamNumber = 2) {
+		const mockRoom = createMockRoom();
+		const setup = setupInteraction(["1", "2", "3", "4"], teamNumber, mockRoom);
+
+		await teamCommand.execute(setup.mockInteraction as never, mockCtx);
+
+		return { ...setup, mockRoom };
+	}
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("初期表示: チーム一覧 + 除外メニュー + cancel/confirm/rerollボタンが表示される", async () => {
 		const { mockInteraction } = await setupTeamCommand();
 
 		const editReplyCall = mockInteraction.editReply.mock.calls[0][0] as {
@@ -181,7 +333,8 @@ describe("/team（UI状態分岐）", () => {
 		expect(editReplyCall.content).toContain("チーム1");
 		expect(editReplyCall.content).toContain("チーム2");
 
-		const buttonIds = editReplyCall.components[0].components.map((c) => c.data.custom_id);
+		expect(editReplyCall.components[0].components[0].data.custom_id).toBe("exclude");
+		const buttonIds = editReplyCall.components[1].components.map((c) => c.data.custom_id);
 		expect(buttonIds).toContain("cancel");
 		expect(buttonIds).toContain("confirm");
 		expect(buttonIds).toContain("reroll");
@@ -196,7 +349,23 @@ describe("/team（UI状態分岐）", () => {
 		expect(collectorOptions.idle).toBeGreaterThan(0);
 	});
 
-	it("reroll後: 新しいチーム一覧が表示される（同じcancel/confirm/rerollボタン行）", async () => {
+	it("実行者以外のボタン操作は弾き、操作者に返信する", async () => {
+		const { mockMessage } = await setupTeamCommand();
+
+		const collectorOptions = mockMessage.createMessageComponentCollector.mock.calls[0][0] as {
+			filter: (i: unknown) => Promise<boolean>;
+		};
+		const otherUserInteraction = {
+			customId: "reroll",
+			user: { id: "user-2" },
+			reply: vi.fn().mockResolvedValue(undefined),
+		};
+
+		await expect(collectorOptions.filter(otherUserInteraction)).resolves.toBe(false);
+		expect(otherUserInteraction.reply).toHaveBeenCalledOnce();
+	});
+
+	it("reroll後: チーム一覧が表示され、同じ除外メニューとcancel/confirm/rerollボタン行が残る", async () => {
 		const { getCollectHandler } = await setupTeamCommand();
 
 		const rerollButtonInteraction = {
@@ -218,7 +387,8 @@ describe("/team（UI状態分岐）", () => {
 		expect(updateArgs.content).toContain("チーム1");
 		expect(updateArgs.content).toContain("チーム2");
 
-		const buttonIds = updateArgs.components[0].components.map((c) => c.data.custom_id);
+		expect(updateArgs.components[0].components[0].data.custom_id).toBe("exclude");
+		const buttonIds = updateArgs.components[1].components.map((c) => c.data.custom_id);
 		expect(buttonIds).toContain("cancel");
 		expect(buttonIds).toContain("confirm");
 		expect(buttonIds).toContain("reroll");
@@ -280,6 +450,25 @@ describe("/team（UI状態分岐）", () => {
 		expect(buttonIds).not.toContain("cancel");
 		expect(buttonIds).not.toContain("confirm");
 		expect(buttonIds).not.toContain("reroll");
+	});
+
+	it("move後: チーム数ぶんの追加VCを確保し、全メンバーを各チームのVCへ移動する", async () => {
+		const { getCollectHandler, mockRoom } = await setupTeamCommand();
+
+		const moveButtonInteraction = {
+			customId: "move",
+			deferUpdate: vi.fn().mockResolvedValue(undefined),
+			update: vi.fn().mockResolvedValue(undefined),
+			editReply: vi.fn().mockResolvedValue(undefined),
+			user: { id: "user-1" },
+		};
+
+		await getCollectHandler()!(moveButtonInteraction);
+
+		expect(mockRoom.setAdditionalVoiceChannels).toHaveBeenCalledWith(2);
+		expect(mockRoom.moveMembers).toHaveBeenCalledTimes(4);
+		const targetIndexes = mockRoom.moveMembers.mock.calls.map(([, index]) => index as number);
+		expect(new Set(targetIndexes)).toEqual(new Set([1, 2]));
 	});
 
 	it("cancel後: ボタン側のインタラクションでリプライが削除される", async () => {

@@ -1,5 +1,5 @@
 import { MessageFlags, SlashCommandBuilder } from "discord.js";
-import { isGuildInteraction } from "./helpers";
+import { GUILD_ONLY_MESSAGE, isGuildInteraction, ROOM_ONLY_MESSAGE } from "./helpers";
 import { getRoomFromVoiceChannel } from "./helpers/room";
 import type { CommandHandler } from "./types";
 
@@ -20,10 +20,7 @@ export const callCommand: CommandHandler = {
 
 	async execute(interaction, ctx) {
 		if (!isGuildInteraction(interaction)) {
-			await interaction.reply({
-				content: "このコマンドはサーバー内でのみ使用できます。",
-				flags: MessageFlags.Ephemeral,
-			});
+			await interaction.reply({ content: GUILD_ONLY_MESSAGE, flags: MessageFlags.Ephemeral });
 			return;
 		}
 
@@ -31,7 +28,7 @@ export const callCommand: CommandHandler = {
 
 		const room = getRoomFromVoiceChannel(interaction, ctx.roomManager);
 		if (!room) {
-			await interaction.editReply("このコマンドはルーム内でのみ使用できます。");
+			await interaction.editReply(ROOM_ONLY_MESSAGE);
 			return;
 		}
 
@@ -41,8 +38,8 @@ export const callCommand: CommandHandler = {
 			await room.callMembers(targetIndex);
 			await interaction.editReply("メンバーを集合させました");
 		} catch (error) {
-			console.error("Failed to call members:", error);
-			await interaction.editReply("メンバーの移動中にエラーが発生しました。");
+			console.error("[call] Failed to call members:", error);
+			await interaction.editReply("メンバーの移動中にエラーが発生しました");
 		}
 	},
 };

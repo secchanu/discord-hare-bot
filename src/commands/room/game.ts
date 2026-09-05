@@ -1,7 +1,7 @@
 import { type ChatInputCommandInteraction, MessageFlags, type Role } from "discord.js";
 import type { AppContext } from "../../bot/context";
-import { hasRoleManager } from "../../types/guards";
-import { isGuildInteraction } from "../helpers";
+import { GUILD_ONLY_MESSAGE, isGuildInteraction, ROOM_ONLY_MESSAGE } from "../helpers";
+import { getGameRoleError, INVALID_GAME_ROLE_MESSAGE } from "../helpers/game";
 import { getRoomFromTextChannel } from "../helpers/room";
 
 /**
@@ -13,10 +13,7 @@ export async function handleGame(
 	ctx: AppContext,
 ): Promise<void> {
 	if (!isGuildInteraction(interaction)) {
-		await interaction.reply({
-			content: "このコマンドはサーバー内でのみ使用できます。",
-			flags: MessageFlags.Ephemeral,
-		});
+		await interaction.reply({ content: GUILD_ONLY_MESSAGE, flags: MessageFlags.Ephemeral });
 		return;
 	}
 
@@ -24,30 +21,21 @@ export async function handleGame(
 
 	const room = getRoomFromTextChannel(interaction, ctx.roomManager);
 	if (!room) {
-		await interaction.editReply("このコマンドはルーム内でのみ使用できます。");
+		await interaction.editReply(ROOM_ONLY_MESSAGE);
 		return;
 	}
 
+	// @everyone は changeGame がデフォルトゲームに変換する
 	const role = interaction.options.getRole("game", true) as Role;
-	const roleId = role.id;
-
-	// 無効なロールチェック（ignoreロールのみ、@everyoneはchangeGameで変換される）
-	if (ctx.config.ignoreRoleIds.includes(roleId)) {
-		await interaction.editReply("このロールはゲームとして選択できません");
+	const roleError = getGameRoleError(interaction, role, ctx);
+	if (roleError) {
+		await interaction.editReply(roleError);
 		return;
 	}
 
-	// メンバーがロールを持っているかチェック
-	if (!hasRoleManager(interaction.member) || !interaction.member.roles.cache.has(roleId)) {
-		await interaction.editReply(
-			"このゲームは付与されていないため選択できません\n先に<id:customize>からプレイするゲームとして選択してください",
-		);
-		return;
-	}
-
-	const setGame = await ctx.roomManager.changeGame(room, roleId);
+	const setGame = await ctx.roomManager.changeGame(room, role.id);
 	if (!setGame) {
-		await interaction.editReply("このロールはゲームとして選択できません");
+		await interaction.editReply(INVALID_GAME_ROLE_MESSAGE);
 		return;
 	}
 

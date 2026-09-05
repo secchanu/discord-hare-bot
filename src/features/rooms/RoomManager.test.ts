@@ -36,7 +36,6 @@ const testConfig: BotConfig = {
 	readyChannelId: "ready-channel-id",
 	wantedChannelId: "wanted-channel-id",
 	ignoreRoleIds: ["ignore-role-id"],
-	ignoreRoles: [{ id: "ignore-role-id", note: "" }],
 };
 
 function createManager(): RoomManager {
@@ -113,7 +112,7 @@ describe("RoomManager.createRoom()", () => {
 		const manager = createManager();
 		await manager.createRoom(makeNewState("user-3"));
 
-		expect(manager.getAll().size).toBe(0);
+		expect(getRooms(manager).size).toBe(0);
 	});
 
 	it("newState.memberがnullの場合は何も処理しない", async () => {

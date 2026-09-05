@@ -40,7 +40,7 @@ export async function handleCommand(
 
 	if (!command) {
 		await interaction.reply({
-			content: "不明なコマンドです。",
+			content: "不明なコマンドです",
 			flags: MessageFlags.Ephemeral,
 		});
 		return;

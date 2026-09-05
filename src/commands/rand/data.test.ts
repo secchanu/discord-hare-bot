@@ -90,23 +90,46 @@ describe("/rand data", () => {
 		);
 	});
 
-	it("セレクトメニューがタイムアウトした場合は「タイムアウト」メッセージを返す", async () => {
+	it("選択がないまま時間が過ぎた場合はタイムアウトを表示してメニューを取り除く", async () => {
 		mockGameManager.getGame.mockResolvedValue({
 			id: "game-role-id",
 			name: "ゲームA",
 			data: { マップ: ["マップA", "マップB"] },
 		});
-		// awaitMessageComponent が null を返す（タイムアウト）
 		const message = makeMessage(null);
 		const interaction = makeInteraction(message);
 
 		await handleData(interaction, mockCtx);
-		expect(interaction.editReply).toHaveBeenLastCalledWith(
-			expect.objectContaining({ content: expect.stringContaining("タイムアウト") }),
-		);
+		expect(message.edit).toHaveBeenLastCalledWith({
+			content: expect.stringContaining("タイムアウト"),
+			components: [],
+		});
 	});
 
-	describe("UI状態分岐: reroll / confirm / cancel", () => {
+	it("実行者以外のデータ選択は弾き、操作者に返信する", async () => {
+		mockGameManager.getGame.mockResolvedValue({
+			id: "game-role-id",
+			name: "ゲームA",
+			data: { マップ: ["マップA", "マップB"] },
+		});
+		const message = makeMessage(null);
+		const interaction = makeInteraction(message);
+
+		await handleData(interaction, mockCtx);
+
+		const selectOptions = message.awaitMessageComponent.mock.calls[0][0] as {
+			filter: (i: unknown) => Promise<boolean>;
+		};
+		const otherUserInteraction = {
+			user: { id: "other-user-id" },
+			reply: vi.fn().mockResolvedValue(undefined),
+		};
+
+		await expect(selectOptions.filter(otherUserInteraction)).resolves.toBe(false);
+		expect(otherUserInteraction.reply).toHaveBeenCalledOnce();
+	});
+
+	describe("ボタン操作", () => {
 		async function setupWithData() {
 			mockGameManager.getGame.mockResolvedValue({
 				id: "game-role-id",
@@ -129,7 +152,7 @@ describe("/rand data", () => {
 			};
 		}
 
-		it("reroll後: 新しいランダム値が表示される（同じボタン行）", async () => {
+		it("reroll後: データのいずれかが表示され、同じボタン行が残る", async () => {
 			const { getCollectHandler } = await setupWithData();
 			const collectHandler = getCollectHandler();
 			expect(collectHandler).toBeDefined();
@@ -141,12 +164,16 @@ describe("/rand data", () => {
 			};
 			await collectHandler!(buttonInteraction);
 
-			expect(buttonInteraction.update).toHaveBeenCalledWith(
-				expect.objectContaining({ components: expect.any(Array) }),
-			);
+			const updateArgs = buttonInteraction.update.mock.calls[0][0] as {
+				content: string;
+				components: Array<{ components: Array<{ data: { custom_id: string } }> }>;
+			};
+			expect(["マップA", "マップB"]).toContain(updateArgs.content);
+			const buttonIds = updateArgs.components[0].components.map((c) => c.data.custom_id);
+			expect(buttonIds).toEqual(["cancel", "confirm", "reroll"]);
 		});
 
-		it("confirm後: ボタンが消える（コンテンツは残る）", async () => {
+		it("confirm後: コンテンツを残してボタンだけが消える", async () => {
 			const { mockCollector, getCollectHandler } = await setupWithData();
 			const collectHandler = getCollectHandler();
 			expect(collectHandler).toBeDefined();
@@ -159,9 +186,7 @@ describe("/rand data", () => {
 			await collectHandler!(buttonInteraction);
 
 			expect(mockCollector.stop).toHaveBeenCalledWith("confirm");
-			expect(buttonInteraction.update).toHaveBeenCalledWith(
-				expect.objectContaining({ components: [] }),
-			);
+			expect(buttonInteraction.update).toHaveBeenCalledWith({ components: [] });
 		});
 
 		it("cancel後: ボタン側のインタラクションでリプライが削除される", async () => {

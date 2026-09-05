@@ -20,13 +20,6 @@ export class RoomStore {
 	}
 
 	/**
-	 * ルームを取得
-	 */
-	async get(roomId: Snowflake): Promise<RoomData | undefined> {
-		return this.store.get(roomId);
-	}
-
-	/**
 	 * 全ルームデータを取得
 	 */
 	async getAll(): Promise<RoomData[]> {

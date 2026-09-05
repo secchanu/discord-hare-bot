@@ -18,7 +18,7 @@ export const setupInteractionCreateHandler = (client: Client, ctx: AppContext): 
 				if (interaction.replied || interaction.deferred) return;
 				try {
 					await interaction.reply({
-						content: "この操作は期限切れです。コマンドを再実行してください。",
+						content: "この操作は期限切れです\nコマンドを再実行してください",
 						flags: MessageFlags.Ephemeral,
 					});
 				} catch {
@@ -34,9 +34,9 @@ export const setupInteractionCreateHandler = (client: Client, ctx: AppContext): 
 		try {
 			await handleCommand(interaction, ctx);
 		} catch (error) {
-			console.error("Error handling command:", error);
+			console.error("[InteractionCreate] Failed to handle command:", error);
 
-			const content = "コマンドの実行中にエラーが発生しました。";
+			const content = "コマンドの実行中にエラーが発生しました";
 
 			if (interaction.deferred || interaction.replied) {
 				await interaction.editReply({ content });
