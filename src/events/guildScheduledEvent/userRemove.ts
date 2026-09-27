@@ -3,8 +3,7 @@ import { Events } from "discord.js";
 import type { AppContext } from "../../bot/context";
 
 /**
- * Guild Scheduled Event ユーザー削除時の処理
- * Discord.js の GuildScheduledEventUserRemove イベントハンドラー
+ * スケジュールイベントの参加登録の取り消し時に、取り消したユーザーから専用チャットを隠す
  */
 export const setupGuildScheduledEventUserRemoveHandler = (
 	client: Client,

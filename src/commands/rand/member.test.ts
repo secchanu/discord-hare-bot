@@ -1,149 +1,87 @@
-import { Collection } from "discord.js";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { handleMember } from "./member";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createWorld, type World } from "../../testing/world";
+
+let world: World;
+
+beforeEach(async () => {
+	world = await createWorld();
+});
+
+afterEach(() => {
+	world.dispose();
+});
 
 /**
- * モックGuildMemberを生成するヘルパー
+ * 表示からメンションを取り出す
  */
-function createMockMember(id: string, isBot = false) {
-	return {
-		id,
-		user: { bot: isBot, id },
-		toString: () => `<@${id}>`,
-	};
+function mentionsIn(content: string): string[] {
+	return content.split("\n");
 }
 
-/**
- * メンバーCollectionを生成するヘルパー
- */
-function createMemberCollection(ids: string[], includeBot = false) {
-	const collection = new Collection<string, ReturnType<typeof createMockMember>>();
-	for (const id of ids) {
-		collection.set(id, createMockMember(id, false));
-	}
-	if (includeBot) {
-		const botId = "bot-1";
-		collection.set(botId, createMockMember(botId, true));
-	}
-	return collection;
-}
+describe("実行条件", () => {
+	it("ルーム外から実行した場合は実行者にだけエラーを返す", async () => {
+		const { members } = await world.setupRoom("alice");
 
-/**
- * インタラクションモックを生成するヘルパー
- * @param voiceChannel - VC（nullの場合はVC未接続）
- * @param inGuild - ギルド内かどうか
- * @param numberOption - /rand member の number オプション
- */
-function createMockInteraction(
-	voiceChannel: { members: Collection<string, ReturnType<typeof createMockMember>> } | null,
-	inGuild = true,
-	numberOption: number | null = 1,
-) {
-	return {
-		inCachedGuild: vi.fn().mockReturnValue(inGuild),
-		channel: inGuild ? {} : null,
-		member: {
-			roles: { cache: new Collection() },
-			voice: { channel: voiceChannel },
-		},
-		options: {
-			getInteger: vi.fn().mockReturnValue(numberOption),
-		},
-		deferReply: vi.fn().mockResolvedValue(undefined),
-		editReply: vi.fn().mockResolvedValue(undefined),
-		reply: vi.fn().mockResolvedValue(undefined),
-	};
-}
+		const run = await members[0].run("rand member", world.generalChannel);
 
-describe("/rand member", () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
+		expect(run.publicMessages).toEqual([]);
+		expect(run.privateMessages).toEqual(["このコマンドはルーム内でのみ使用できます"]);
 	});
 
-	it("指定数 < メンバー数: 指定数だけ選ばれる", async () => {
-		const members = createMemberCollection(["1", "2", "3", "4", "5"]);
-		const voiceChannel = { members };
-		const interaction = createMockInteraction(voiceChannel as never, true, 2);
+	it("ボイスチャンネルに入っていない場合は実行者にだけエラーを返す", async () => {
+		const { room } = await world.setupRoom("alice");
 
-		await handleMember(interaction as never);
+		const run = await world.addMember("bob").run("rand member", room.textChannel);
 
-		expect(interaction.editReply).toHaveBeenCalledOnce();
-		const content = interaction.editReply.mock.calls[0][0] as string;
-		const mentions = content.match(/<@\d+>/g) ?? [];
-		expect(mentions).toHaveLength(2);
+		expect(run.publicMessages).toEqual([]);
+		expect(run.privateMessages).toEqual(["このコマンドはルーム内でのみ使用できます"]);
 	});
+});
 
-	it("指定数 = メンバー数: 全員選ばれる（境界値）", async () => {
-		const members = createMemberCollection(["1", "2", "3"]);
-		const voiceChannel = { members };
-		const interaction = createMockInteraction(voiceChannel as never, true, 3);
+describe("選択", () => {
+	it("0人以下は指定できない（境界値）", async () => {
+		const { room, members } = await world.setupRoom("alice");
 
-		await handleMember(interaction as never);
-
-		expect(interaction.editReply).toHaveBeenCalledOnce();
-		const content = interaction.editReply.mock.calls[0][0] as string;
-		const mentions = content.match(/<@\d+>/g) ?? [];
-		expect(mentions).toHaveLength(3);
-	});
-
-	it("指定数 > メンバー数: メンバー数で頭打ち（境界値）", async () => {
-		const members = createMemberCollection(["1", "2"]);
-		const voiceChannel = { members };
-		const interaction = createMockInteraction(voiceChannel as never, true, 10);
-
-		await handleMember(interaction as never);
-
-		expect(interaction.editReply).toHaveBeenCalledOnce();
-		const content = interaction.editReply.mock.calls[0][0] as string;
-		const mentions = content.match(/<@\d+>/g) ?? [];
-		// メンバー数(2)を超えない
-		expect(mentions).toHaveLength(2);
-	});
-
-	it("VCに未接続の場合は「VCに接続していません」を返す", async () => {
-		const interaction = createMockInteraction(null, true, 1);
-
-		await handleMember(interaction as never);
-
-		expect(interaction.editReply).toHaveBeenCalledWith("VCに接続していません");
-	});
-
-	it("選択可能なメンバーがいない（Botのみ）場合は「選択可能なメンバーがいません」を返す", async () => {
-		// Botのみのコレクション
-		const members = new Collection<string, ReturnType<typeof createMockMember>>();
-		members.set("bot-1", createMockMember("bot-1", true));
-		const voiceChannel = { members };
-		const interaction = createMockInteraction(voiceChannel as never, true, 1);
-
-		await handleMember(interaction as never);
-
-		expect(interaction.editReply).toHaveBeenCalledWith("選択可能なメンバーがいません");
-	});
-
-	it("デフォルトではnumberが未指定の場合に1人選ばれる", async () => {
-		const members = createMemberCollection(["1", "2", "3"]);
-		const voiceChannel = { members };
-		// numberOption = null → コード内で ?? 1 によりデフォルト1
-		const interaction = createMockInteraction(voiceChannel as never, true, null);
-
-		await handleMember(interaction as never);
-
-		expect(interaction.editReply).toHaveBeenCalledOnce();
-		const content = interaction.editReply.mock.calls[0][0] as string;
-		const mentions = content.match(/<@\d+>/g) ?? [];
-		expect(mentions).toHaveLength(1);
-	});
-
-	it("ギルド外から実行した場合はエラーを返す", async () => {
-		const members = createMemberCollection(["1", "2"]);
-		const voiceChannel = { members };
-		const interaction = createMockInteraction(voiceChannel as never, false, 1);
-
-		await handleMember(interaction as never);
-
-		expect(interaction.reply).toHaveBeenCalledWith(
-			expect.objectContaining({ content: expect.stringContaining("サーバー内でのみ") }),
+		await expect(members[0].run("rand member", room.textChannel, { number: 0 })).rejects.toThrow(
+			RangeError,
 		);
-		expect(interaction.editReply).not.toHaveBeenCalled();
+	});
+
+	it("人数を指定しない場合は、ボイスチャンネルのメンバーから1人を選ぶ", async () => {
+		const { room, members } = await world.setupRoom("alice", "bob", "carol");
+
+		const run = await members[0].run("rand member", room.textChannel);
+
+		const selected = mentionsIn(run.response.content);
+		expect(selected).toHaveLength(1);
+		expect(members.map((member) => member.mention)).toContain(selected[0]);
+	});
+
+	it("指定した人数を重複なく選ぶ", async () => {
+		const { room, members } = await world.setupRoom("alice", "bob", "carol", "dave");
+
+		const run = await members[0].run("rand member", room.textChannel, { number: 2 });
+
+		const selected = mentionsIn(run.response.content);
+		expect(new Set(selected).size).toBe(2);
+	});
+
+	it("メンバー数を超える人数を指定した場合は全員を選ぶ（境界値）", async () => {
+		const { room, members } = await world.setupRoom("alice", "bob");
+
+		const run = await members[0].run("rand member", room.textChannel, { number: 3 });
+
+		expect(mentionsIn(run.response.content).sort()).toEqual(
+			members.map((member) => member.mention).sort(),
+		);
+	});
+
+	it("Botは選ばない", async () => {
+		const { room, members } = await world.setupRoom("alice");
+		await world.addMember("music-bot", { bot: true }).joinVoice(room.voiceChannel);
+
+		const run = await members[0].run("rand member", room.textChannel, { number: 2 });
+
+		expect(mentionsIn(run.response.content)).toEqual([members[0].mention]);
 	});
 });

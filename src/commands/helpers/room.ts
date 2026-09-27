@@ -1,41 +1,42 @@
-import type { ChatInputCommandInteraction } from "discord.js";
 import type { Room } from "../../features/rooms/Room";
 import type { RoomManager } from "../../features/rooms/RoomManager";
-import { hasRoleManager } from "../../types/guards";
+import type { GuildCommandInteraction } from "../types";
 
 /**
- * ルーム内のボイスチャンネルに接続しているかチェック
+ * 実行者が接続しているボイスチャンネルのルームを返す
  */
 export function getRoomFromVoiceChannel(
-	interaction: ChatInputCommandInteraction,
+	interaction: GuildCommandInteraction,
 	roomManager: RoomManager,
 ): Room | null {
-	if (
-		!interaction.member ||
-		!hasRoleManager(interaction.member) ||
-		!interaction.member.voice.channel ||
-		!interaction.member.voice.channel.parentId
-	) {
-		return null;
-	}
+	const parentId = interaction.member.voice.channel?.parentId;
+	if (!parentId) return null;
 
-	return roomManager.get(interaction.member.voice.channel.parentId) ?? null;
+	return roomManager.get(parentId) ?? null;
 }
 
 /**
- * ルーム内のテキストチャンネルから実行されているかチェック
+ * 実行者が接続しているボイスチャンネルと、実行したチャンネルが同じルームにあるとき、そのルームを返す
+ * ボイスチャンネルのメンバーを対象にするコマンドで、結果をルームの中だけに出すために使う
  */
-export function getRoomFromTextChannel(
-	interaction: ChatInputCommandInteraction,
+export function getRoomFromVoiceAndTextChannel(
+	interaction: GuildCommandInteraction,
 	roomManager: RoomManager,
 ): Room | null {
-	if (
-		!interaction.channel ||
-		!("parentId" in interaction.channel) ||
-		!interaction.channel.parentId
-	) {
-		return null;
-	}
+	const room = getRoomFromVoiceChannel(interaction, roomManager);
+	if (!room || getRoomFromTextChannel(interaction, roomManager) !== room) return null;
+	return room;
+}
 
-	return roomManager.get(interaction.channel.parentId) ?? null;
+/**
+ * 実行したチャンネルのルームを返す
+ */
+export function getRoomFromTextChannel(
+	interaction: GuildCommandInteraction,
+	roomManager: RoomManager,
+): Room | null {
+	const parentId = interaction.channel?.parentId;
+	if (!parentId) return null;
+
+	return roomManager.get(parentId) ?? null;
 }

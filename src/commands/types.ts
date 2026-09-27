@@ -7,9 +7,15 @@ import type {
 import type { AppContext } from "../bot/context";
 
 /**
- * Discord.js コマンドハンドラーのインターフェース
+ * サーバー内で実行されたスラッシュコマンド
+ * コマンドはギルドコマンドとして登録するため、サーバー内からだけ届く
+ */
+export type GuildCommandInteraction = ChatInputCommandInteraction<"cached">;
+
+/**
+ * スラッシュコマンドの定義と処理
  */
 export interface CommandHandler {
 	data: SlashCommandBuilder | SlashCommandSubcommandsOnlyBuilder | SlashCommandOptionsOnlyBuilder;
-	execute: (interaction: ChatInputCommandInteraction, ctx: AppContext) => Promise<void>;
+	execute: (interaction: GuildCommandInteraction, ctx: AppContext) => Promise<void>;
 }

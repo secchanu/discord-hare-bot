@@ -15,7 +15,7 @@ export const TIME = {
 	HOUR: 60 * 60 * 1000,
 } as const;
 
-// Discord制限
+// Discord の制限
 export const DISCORD_LIMITS = {
 	MAX_SELECT_MENU_OPTIONS: 25,
 	MAX_ADDITIONAL_VOICE_CHANNELS: 25,
@@ -23,17 +23,13 @@ export const DISCORD_LIMITS = {
 
 // タイムアウト
 export const TIMEOUT = {
-	// セレクトメニューの選択待ち
-	INTERACTION: TIME.MINUTE,
-	// モーダルの送信待ち
-	MODAL_SUBMIT: TIME.HOUR,
 	// ルーム作成時に初期ゲームの判定に使う募集メッセージの有効期限
 	GAME_WANTED_MESSAGE: 6 * TIME.HOUR,
-	// セッションUI（ボタン操作）の無操作タイムアウト。
-	// 15分（インタラクショントークンの有効期限）を超えるため、
-	// メッセージ編集はコンポーネント側のインタラクションで行うこと
-	COMPONENT_IDLE: 15 * TIME.MINUTE,
-	// コレクターを失ったコンポーネント操作に「期限切れ」を返すまでの猶予。
-	// 生きているコレクターが先に応答するのを待つ（初回応答期限の3秒以内に収める）
+	// ボタン・セレクトメニュー・モーダルを使うセッションの無操作タイムアウト
+	// 残るのは実行者だけが操作できるUIのため、一度に遊ぶ時間を十分に超える長さにする
+	// コマンドのインタラクショントークンの有効期限（15分）を超えるため、セッション中のメッセージ編集は、セッションで受け取ったインタラクションかメッセージの編集で行う
+	COMPONENT_IDLE: 12 * TIME.HOUR,
+	// コレクターのないコンポーネント操作に期限切れを返すまでの猶予
+	// 動作中のコレクターが先に応答するのを待ち、最初の応答の期限（3秒）内に収める
 	ORPHANED_COMPONENT_GRACE: 2 * TIME.SECOND,
 } as const;

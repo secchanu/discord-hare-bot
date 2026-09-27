@@ -4,7 +4,7 @@ import { handleData } from "./data";
 
 /**
  * /game コマンド
- * ゲーム設定関連のサブコマンド
+ * ゲームを設定するサブコマンドをまとめる
  */
 export const gameCommand: CommandHandler = {
 	data: new SlashCommandBuilder()

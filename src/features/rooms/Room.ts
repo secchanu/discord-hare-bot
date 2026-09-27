@@ -16,12 +16,8 @@ import { defaultGame, type Game } from "../games/types";
 import type { CreateRoomOptions, RoomData, RoomHooks } from "./types";
 
 /**
- * Discord ギルドルーム
- *
- * 状態を変更する mutation メソッドは hooks.persist を必ず呼ぶため、
- * 呼び出し側が永続化を意識する必要はない。
- * Discord への反映（チャンネル名など）はベストエフォートで、
- * 状態の確定・永続化が常に先行する。
+ * カテゴリー・専用チャット・ボイスチャンネルからなるルーム
+ * 状態の確定と永続化を先に行い、Discord への反映（チャンネル名など）はベストエフォートで行う
  */
 export class Room {
 	private readonly _guild: Guild;
@@ -35,17 +31,16 @@ export class Room {
 
 	public readonly eventId?: Snowflake;
 
-	// チャンネルID
 	private categoryId?: Snowflake;
 	private textChannelId?: Snowflake;
 	private _voiceChannelId?: Snowflake;
 	private additionalVoiceChannelIds: Snowflake[] = [];
 
-	// チャンネル名変更のコアレス用状態
+	// 連続したボイスチャンネル名の変更を最新の名前にまとめるための状態
 	private desiredVoiceChannelName?: string;
 	private renameInFlight = false;
 
-	// 削除の冪等化用（実行中の削除処理を共有する）
+	// 実行中の削除処理（削除中の呼び出しで共有する）
 	private deletion?: Promise<boolean>;
 
 	constructor(guild: Guild, options: CreateRoomOptions, hooks: RoomHooks) {
@@ -61,7 +56,7 @@ export class Room {
 	}
 
 	/**
-	 * データベース保存用のデータを取得
+	 * 永続化するデータを返す
 	 */
 	toData(): RoomData {
 		if (!this.categoryId || !this.textChannelId || !this._voiceChannelId) {
@@ -87,7 +82,7 @@ export class Room {
 	}
 
 	/**
-	 * 保存データから復元
+	 * 永続化したデータからルームを復元する
 	 * ゲームの解決は呼び出し側（RoomManager）が行う
 	 */
 	static fromData(guild: Guild, data: RoomData, game: Game, hooks: RoomHooks): Room {
@@ -103,7 +98,6 @@ export class Room {
 			hooks,
 		);
 
-		// チャンネルIDを復元
 		room.categoryId = data.channels.categoryId;
 		room.textChannelId = data.channels.textChannelId;
 		room._voiceChannelId = data.channels.voiceChannelId;
@@ -114,7 +108,7 @@ export class Room {
 	}
 
 	/**
-	 * カテゴリIDを取得（ルームのID）
+	 * カテゴリーのID（ルームのID）
 	 */
 	get id(): Snowflake | undefined {
 		return this.categoryId;
@@ -141,7 +135,7 @@ export class Room {
 	}
 
 	/**
-	 * ボイスチャンネルを取得
+	 * メインのボイスチャンネル
 	 */
 	get voiceChannel(): VoiceBasedChannel | undefined {
 		if (!this._voiceChannelId) return undefined;
@@ -150,14 +144,14 @@ export class Room {
 	}
 
 	/**
-	 * 指定チャンネルがこのルームのVC（メイン・追加）か判定
+	 * チャンネルがこのルームのボイスチャンネル（メイン・追加）か判定する
 	 */
 	hasVoiceChannel(channelId: Snowflake): boolean {
 		return this._voiceChannelId === channelId || this.additionalVoiceChannelIds.includes(channelId);
 	}
 
 	/**
-	 * 現在参加しているメンバー（Botを除く）
+	 * ルームのボイスチャンネルにいる Bot 以外のメンバー
 	 */
 	get members(): Collection<Snowflake, GuildMember> {
 		const voiceChannels = [this._voiceChannelId, ...this.additionalVoiceChannelIds]
@@ -174,23 +168,21 @@ export class Room {
 
 	/**
 	 * 予約（イベント連携）を解除する
-	 * 削除の直前に呼ばれる想定のため永続化はせず、
-	 * 削除されないまま再起動した場合は起動時の reconcile が再解除する
+	 * 削除の直前に呼ぶため、永続化はしない
+	 * 削除されないまま Bot が再起動した場合は、起動時の reconcile が改めて解除する
 	 */
 	unreserve(): void {
 		this._reserved = false;
 	}
 
 	/**
-	 * ルームを作成
-	 * 途中で失敗した場合は作成済みチャンネルをベストエフォートで削除して再スローする
-	 * （Discord API に原子性はないため、取りこぼしは起動時の reconcile に委ねる）
+	 * ルームのチャンネルを作成する
+	 * 途中で失敗した場合は、作成済みのチャンネルをベストエフォートで削除して再スローする
 	 */
 	async create(position?: number): Promise<Snowflake> {
 		const createdChannelIds: Snowflake[] = [];
 
 		try {
-			// カテゴリーチャンネルを作成
 			const category = await this.channelManager.create({
 				name: this.hostname,
 				type: ChannelType.GuildCategory,
@@ -199,7 +191,6 @@ export class Room {
 			this.categoryId = category.id;
 			createdChannelIds.push(category.id);
 
-			// テキストチャンネルとボイスチャンネルを作成
 			const [textResult, voiceResult] = await Promise.allSettled([
 				this.channelManager.create({
 					name: "専用チャット",
@@ -244,31 +235,28 @@ export class Room {
 	}
 
 	/**
-	 * ルームを削除
-	 * 並行して呼ばれた場合は実行中の削除処理を共有する（二重削除の防止）
-	 * チャンネル削除に失敗した場合は再スローし、残骸の回収は reconcile に委ねる
+	 * 誰もいない予約なしのルームを削除する
+	 * 削除できるかは呼ばれるたびに判定し、削除中の呼び出しは実行中の削除処理を共有する
+	 * チャンネルの削除に失敗した場合は再スローし、残ったチャンネルは起動時の reconcile が削除する
+	 * @returns 削除できたか（予約中・メンバー在室の場合は false）
 	 */
 	async delete(): Promise<boolean> {
 		if (this.deletion) return this.deletion;
+		if (this._reserved || this.members.size) return false;
 
-		const deletion = this.performDelete();
+		const deletion = this.deleteChannels().then(() => true);
 		this.deletion = deletion;
 
 		try {
-			const deleted = await deletion;
-			if (!deleted) this.deletion = undefined;
-			return deleted;
+			return await deletion;
 		} catch (error) {
 			this.deletion = undefined;
 			throw error;
 		}
 	}
 
-	private async performDelete(): Promise<boolean> {
-		if (this._reserved) return false;
-		if (this.members.size) return false;
-
-		// カテゴリを最後にし、子チャンネルから順に削除する
+	private async deleteChannels(): Promise<void> {
+		// 子チャンネルを先に削除し、カテゴリーを最後に削除する
 		const channelIds = [
 			...this.additionalVoiceChannelIds,
 			this._voiceChannelId,
@@ -279,8 +267,6 @@ export class Room {
 		for (const id of channelIds) {
 			await this.deleteChannelIfExists(id);
 		}
-
-		return true;
 	}
 
 	/**
@@ -296,9 +282,8 @@ export class Room {
 	}
 
 	/**
-	 * テキストチャンネルの閲覧可否を設定
-	 * @param member 対象メンバー
-	 * @param visible true: 閲覧可能にする、false: 閲覧不可にする
+	 * 専用チャットをメンバーに見せるか設定する
+	 * @param visible 見せるなら true
 	 */
 	async setTextChannelVisibility(member: GuildMemberResolvable, visible: boolean): Promise<void> {
 		if (!this.textChannelId) return;
@@ -311,8 +296,8 @@ export class Room {
 	}
 
 	/**
-	 * ゲームを設定
-	 * ロールの妥当性検証やゲームの解決は RoomManager.changeGame() が行う
+	 * ゲームを設定し、ボイスチャンネル名に反映する
+	 * ロールの検証とゲームの解決は RoomManager.changeGame() が行う
 	 */
 	async setGame(game: Game): Promise<void> {
 		if (this._game.id === game.id) return;
@@ -320,12 +305,11 @@ export class Room {
 		this._game = game;
 		await this.hooks.persist(this);
 
-		// Discordへの反映はベストエフォート（状態と永続化が正）
 		this.requestVoiceChannelRename(game.name);
 	}
 
 	/**
-	 * 追加VCの数を設定
+	 * 追加ボイスチャンネルの数を設定する
 	 */
 	async setAdditionalVoiceChannels(count: number): Promise<number> {
 		const current = this.additionalVoiceChannelIds.length;
@@ -333,7 +317,6 @@ export class Room {
 
 		try {
 			if (diff > 0) {
-				// VCを追加
 				for (let i = 0; i < diff; i++) {
 					const index = this.additionalVoiceChannelIds.length + 1;
 					if (!this.categoryId) {
@@ -348,12 +331,11 @@ export class Room {
 					this.additionalVoiceChannelIds.push(channel.id);
 				}
 			} else if (diff < 0) {
-				// VCを削除
 				const toDelete = this.additionalVoiceChannelIds.splice(diff);
 				await Promise.all(toDelete.map((id) => this.deleteChannelIfExists(id)));
 			}
 		} catch (error) {
-			// 途中失敗でも実際に作成・削除できた分は状態に反映済みのため保存してから再スローする
+			// 途中で失敗しても、作成・削除できた分は状態に反映済みのため、保存してから再スローする
 			await this.hooks.persist(this).catch((persistError) => {
 				console.error("[Room] Failed to persist after partial VC change:", persistError);
 			});
@@ -368,7 +350,8 @@ export class Room {
 	}
 
 	/**
-	 * メンバーを特定のVCに移動
+	 * メンバーを指定した番号のボイスチャンネルに移動する
+	 * @returns 移動できたか
 	 */
 	async moveMembers(voiceState: VoiceState, index = 0): Promise<boolean> {
 		const vcIds = [this._voiceChannelId, ...this.additionalVoiceChannelIds];
@@ -386,14 +369,18 @@ export class Room {
 	}
 
 	/**
-	 * 全メンバーを集合
+	 * ルームのメンバー全員を指定した番号のボイスチャンネルに集める
+	 * @returns 全員を移動できたか
 	 */
-	async callMembers(index = 0): Promise<void> {
-		await Promise.all(this.members.map((member) => this.moveMembers(member.voice, index)));
+	async callMembers(index = 0): Promise<boolean> {
+		const results = await Promise.all(
+			this.members.map((member) => this.moveMembers(member.voice, index)),
+		);
+		return results.every(Boolean);
 	}
 
 	/**
-	 * テキストチャンネルの権限を同期
+	 * 専用チャットの閲覧権限を、ボイスチャンネルにいるメンバーにそろえる
 	 */
 	async syncTextChannelPermissions(): Promise<void> {
 		if (!this.textChannelId) return;
@@ -418,8 +405,7 @@ export class Room {
 
 	/**
 	 * ボイスチャンネル名の変更を要求する
-	 * チャンネル名変更には 2回/10分 のレート制限があるため、
-	 * 要求が連続した場合は最新の名前だけを反映する（途中の名前は破棄）
+	 * チャンネル名の変更には10分に2回のレート制限があるため、連続した要求は最新の名前だけを反映する
 	 */
 	private requestVoiceChannelRename(name: string): void {
 		this.desiredVoiceChannelName = name;
@@ -437,7 +423,7 @@ export class Room {
 
 					await voiceChannel.setName(target);
 
-					// 待機中に新しい名前が要求されていなければ完了
+					// 待機中に新しい名前が要求されていなければ完了する
 					if (this.desiredVoiceChannelName === target) return;
 				}
 			} catch (error) {
@@ -450,7 +436,7 @@ export class Room {
 }
 
 /**
- * Discord API の Unknown Channel エラー判定
+ * Discord API の Unknown Channel エラーか判定する
  */
 function isUnknownChannelError(error: unknown): boolean {
 	return error instanceof DiscordAPIError && error.code === RESTJSONErrorCodes.UnknownChannel;

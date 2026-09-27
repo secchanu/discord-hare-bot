@@ -1,27 +1,21 @@
-import { type ChatInputCommandInteraction, MessageFlags, type Role } from "discord.js";
+import type { Role } from "discord.js";
 import type { AppContext } from "../../bot/context";
-import { GUILD_ONLY_MESSAGE, isGuildInteraction, ROOM_ONLY_MESSAGE } from "../helpers";
+import { ROOM_ONLY_MESSAGE, replyError } from "../helpers";
 import { getGameRoleError, INVALID_GAME_ROLE_MESSAGE } from "../helpers/game";
 import { getRoomFromTextChannel } from "../helpers/room";
+import type { GuildCommandInteraction } from "../types";
 
 /**
  * /room game サブコマンド
- * ルームのゲーム設定
+ * ルームのゲームを変更する
  */
 export async function handleGame(
-	interaction: ChatInputCommandInteraction,
+	interaction: GuildCommandInteraction,
 	ctx: AppContext,
 ): Promise<void> {
-	if (!isGuildInteraction(interaction)) {
-		await interaction.reply({ content: GUILD_ONLY_MESSAGE, flags: MessageFlags.Ephemeral });
-		return;
-	}
-
-	await interaction.deferReply();
-
 	const room = getRoomFromTextChannel(interaction, ctx.roomManager);
 	if (!room) {
-		await interaction.editReply(ROOM_ONLY_MESSAGE);
+		await replyError(interaction, ROOM_ONLY_MESSAGE);
 		return;
 	}
 
@@ -29,13 +23,16 @@ export async function handleGame(
 	const role = interaction.options.getRole("game", true) as Role;
 	const roleError = getGameRoleError(interaction, role, ctx);
 	if (roleError) {
-		await interaction.editReply(roleError);
+		await replyError(interaction, roleError);
 		return;
 	}
 
+	// ゲームの変更は保存を伴い、最初の応答の期限（3秒）を超え得るため、先に応答を保留する
+	await interaction.deferReply();
+
 	const setGame = await ctx.roomManager.changeGame(room, role.id);
 	if (!setGame) {
-		await interaction.editReply(INVALID_GAME_ROLE_MESSAGE);
+		await replyError(interaction, INVALID_GAME_ROLE_MESSAGE);
 		return;
 	}
 

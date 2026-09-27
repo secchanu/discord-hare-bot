@@ -11,7 +11,7 @@ import { setupReadyHandler } from "./ready";
 import { setupVoiceStateUpdateHandler } from "./voiceStateUpdate";
 
 /**
- * 全てのイベントハンドラーを登録
+ * すべてのイベントハンドラーを登録する
  */
 export const registerEventHandlers = (client: Client, ctx: AppContext): void => {
 	// 基本イベント

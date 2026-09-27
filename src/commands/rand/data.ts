@@ -1,77 +1,66 @@
-import {
-	ActionRowBuilder,
-	type ChatInputCommandInteraction,
-	ComponentType,
-	StringSelectMenuBuilder,
-} from "discord.js";
+import { ActionRowBuilder, ComponentType, StringSelectMenuBuilder } from "discord.js";
 import type { AppContext } from "../../bot/context";
-import { TIMEOUT } from "../../constants";
+import { DISCORD_LIMITS, TIMEOUT } from "../../constants";
 import {
 	clearComponents,
 	createCommandUserFilter,
 	createDrawButtonRow,
 	ROOM_ONLY_MESSAGE,
+	replyError,
 	TIMEOUT_MESSAGE,
 } from "../helpers";
 import { getRoomFromTextChannel } from "../helpers/room";
+import type { GuildCommandInteraction } from "../types";
 
 /**
  * /rand data サブコマンド
- * ゲームデータからランダム選択
+ * ルームのゲームのデータから、項目をランダムに選ぶ
  */
 export async function handleData(
-	interaction: ChatInputCommandInteraction,
+	interaction: GuildCommandInteraction,
 	ctx: AppContext,
 ): Promise<void> {
-	await interaction.deferReply();
-
 	const room = getRoomFromTextChannel(interaction, ctx.roomManager);
 	if (!room) {
-		await interaction.editReply(ROOM_ONLY_MESSAGE);
+		await replyError(interaction, ROOM_ONLY_MESSAGE);
 		return;
 	}
 
 	// ルームのゲームはメモリ上のスナップショットのため、最新のデータをストアから取得する
-	const game = await ctx.gameManager.getGame(room.game.id);
-
-	if (!game) {
-		await interaction.editReply("ルームにゲームが設定されていません");
-		return;
-	}
+	const game = (await ctx.gameManager.getGame(room.game.id)) ?? room.game;
 
 	const gameData = game.data;
 	if (!Object.keys(gameData).length) {
-		await interaction.editReply(
+		await replyError(
+			interaction,
 			`抽選できるデータがありません\n部屋のゲームを確認してください\n現在のゲームは「${game.name}」です`,
 		);
 		return;
 	}
 
-	// データ選択メニュー
 	const selectMenu = new StringSelectMenuBuilder()
 		.setCustomId("data_key")
 		.setPlaceholder("データを選択")
 		.addOptions(
-			Object.keys(gameData).map((key) => ({
-				label: key,
-				value: key,
-			})),
+			Object.keys(gameData)
+				.slice(0, DISCORD_LIMITS.MAX_SELECT_MENU_OPTIONS)
+				.map((key) => ({ label: key, value: key })),
 		);
 
 	const selectRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu);
 
+	await interaction.deferReply();
 	const message = await interaction.editReply({
 		content: "抽選するデータを選択してください",
 		components: [selectRow],
 	});
 
-	// データ選択を待つ
 	const isCommandUser = createCommandUserFilter(interaction.user.id);
 	const selectInteraction = await message
 		.awaitMessageComponent({
 			componentType: ComponentType.StringSelect,
 			filter: isCommandUser,
-			time: TIMEOUT.INTERACTION,
+			time: TIMEOUT.COMPONENT_IDLE,
 		})
 		.catch(() => null);
 
@@ -82,18 +71,9 @@ export async function handleData(
 
 	await selectInteraction.deferUpdate();
 
-	const dataKey = selectInteraction.values[0];
-	const items = gameData[dataKey];
+	// 空のデータは保存時に削除されるため、選択肢のデータには必ず項目がある
+	const items = gameData[selectInteraction.values[0]];
 
-	if (!items || items.length === 0) {
-		await selectInteraction.editReply({
-			content: "データが空です",
-			components: [],
-		});
-		return;
-	}
-
-	// ランダム選択関数
 	const getRandom = () => items[Math.floor(Math.random() * items.length)];
 
 	const actionRow = createDrawButtonRow();
@@ -103,9 +83,6 @@ export async function handleData(
 		components: [actionRow],
 	});
 
-	// セッションUI: 無操作が続いたら終了する。
-	// 15分（コマンドのインタラクショントークンの有効期限）を超えて操作され得るため、
-	// 以降のメッセージ編集は各コンポーネントのインタラクション経由で行う
 	const collector = message.createMessageComponentCollector({
 		componentType: ComponentType.Button,
 		idle: TIMEOUT.COMPONENT_IDLE,

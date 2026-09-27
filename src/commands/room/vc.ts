@@ -1,35 +1,32 @@
-import type { ChatInputCommandInteraction } from "discord.js";
 import type { AppContext } from "../../bot/context";
-import { DISCORD_LIMITS } from "../../constants";
-import { ROOM_ONLY_MESSAGE } from "../helpers";
+import { ROOM_ONLY_MESSAGE, replyError } from "../helpers";
 import { getRoomFromTextChannel } from "../helpers/room";
+import type { GuildCommandInteraction } from "../types";
 
 /**
  * /room vc サブコマンド
- * 追加VC数の変更
+ * 追加ボイスチャンネルの数を変更する
  */
 export async function handleVc(
-	interaction: ChatInputCommandInteraction,
+	interaction: GuildCommandInteraction,
 	ctx: AppContext,
 ): Promise<void> {
-	await interaction.deferReply();
-
 	const room = getRoomFromTextChannel(interaction, ctx.roomManager);
 	if (!room) {
-		await interaction.editReply(ROOM_ONLY_MESSAGE);
+		await replyError(interaction, ROOM_ONLY_MESSAGE);
 		return;
 	}
 
-	const number = interaction.options.getInteger("number") ?? 0;
-	const count = Math.max(0, Math.min(number, DISCORD_LIMITS.MAX_ADDITIONAL_VOICE_CHANNELS));
+	// 指定できる範囲はコマンドの定義で制限する
+	const count = interaction.options.getInteger("number") ?? 0;
 
-	await interaction.editReply("追加VC数を変更しています…");
+	await interaction.reply("追加VC数を変更しています…");
 
 	try {
 		await room.setAdditionalVoiceChannels(count);
 		await interaction.editReply(`追加VC数を${count}に変更しました`);
 	} catch (error) {
 		console.error("[room vc] Failed to update additional VCs:", error);
-		await interaction.editReply("VC数の変更中にエラーが発生しました");
+		await replyError(interaction, "VC数の変更中にエラーが発生しました");
 	}
 }

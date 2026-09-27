@@ -1,14 +1,15 @@
-import { type ChatInputCommandInteraction, type Guild, MessageFlags } from "discord.js";
+import type { Guild } from "discord.js";
 import type { AppContext } from "../bot/context";
 import { callCommand } from "./call";
 import { gameCommand } from "./game";
+import { replyError } from "./helpers";
 import { randCommand } from "./rand";
 import { roomCommand } from "./room";
 import { teamCommand } from "./team";
-import type { CommandHandler } from "./types";
+import type { CommandHandler, GuildCommandInteraction } from "./types";
 
 /**
- * 全コマンドの定義
+ * すべてのコマンド
  */
 const commands: Map<string, CommandHandler> = new Map([
 	["room", roomCommand],
@@ -19,8 +20,8 @@ const commands: Map<string, CommandHandler> = new Map([
 ]);
 
 /**
- * コマンドを Discord に登録
- * 単一ギルド運用のため、即時反映されるギルドコマンドとして登録する
+ * コマンドを Discord に登録する
+ * 1つのサーバーだけで運用するため、即時に反映されるギルドコマンドとして登録する
  */
 export async function registerCommands(guild: Guild): Promise<void> {
 	const commandData = Array.from(commands.values()).map((cmd) => cmd.data);
@@ -30,19 +31,16 @@ export async function registerCommands(guild: Guild): Promise<void> {
 }
 
 /**
- * コマンドを実行
+ * コマンドを実行する
  */
 export async function handleCommand(
-	interaction: ChatInputCommandInteraction,
+	interaction: GuildCommandInteraction,
 	ctx: AppContext,
 ): Promise<void> {
 	const command = commands.get(interaction.commandName);
 
 	if (!command) {
-		await interaction.reply({
-			content: "不明なコマンドです",
-			flags: MessageFlags.Ephemeral,
-		});
+		await replyError(interaction, "不明なコマンドです");
 		return;
 	}
 

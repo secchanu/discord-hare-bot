@@ -1,16 +1,16 @@
-import type { ChatInputCommandInteraction, Role } from "discord.js";
+import type { Role } from "discord.js";
 import type { AppContext } from "../../bot/context";
-import { hasRoleManager } from "../../types/guards";
+import type { GuildCommandInteraction } from "../types";
 
 export const INVALID_GAME_ROLE_MESSAGE = "このロールはゲームとして選択できません";
 
 /**
  * ロールをゲームとして選択できない理由を返す
- * 除外ロールは選択できず、実行者が持っていないロールも選択できない
+ * ゲームとして選択できるのは、除外ロール以外で実行者が持っているロール
  * @returns 選択できない理由のメッセージ。選択できる場合は null
  */
 export function getGameRoleError(
-	interaction: ChatInputCommandInteraction<"cached">,
+	interaction: GuildCommandInteraction,
 	role: Role,
 	ctx: AppContext,
 ): string | null {
@@ -18,7 +18,7 @@ export function getGameRoleError(
 		return INVALID_GAME_ROLE_MESSAGE;
 	}
 
-	if (!hasRoleManager(interaction.member) || !interaction.member.roles.cache.has(role.id)) {
+	if (!interaction.member.roles.cache.has(role.id)) {
 		return "このゲームは付与されていないため選択できません\n先に<id:customize>からプレイするゲームとして選択してください";
 	}
 

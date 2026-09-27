@@ -3,8 +3,7 @@ import { Events } from "discord.js";
 import type { AppContext } from "../../bot/context";
 
 /**
- * Guild Scheduled Event 更新時の処理
- * Discord.js の GuildScheduledEventUpdate イベントハンドラー
+ * スケジュールイベントの更新時に、イベントのルームを状態と場所に合わせる
  */
 export const setupGuildScheduledEventUpdateHandler = (client: Client, ctx: AppContext): void => {
 	client.on(

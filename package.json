@@ -7,7 +7,7 @@
 	"author": "secchanu",
 	"main": "dist/index.js",
 	"scripts": {
-		"build": "tsc",
+		"build": "tsc -p tsconfig.build.json",
 		"dev": "tsx --env-file=.env src/index.ts",
 		"format": "oxfmt . && sort-package-json",
 		"lint": "oxlint",

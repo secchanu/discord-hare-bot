@@ -1,88 +1,96 @@
-import type { ChatInputCommandInteraction } from "discord.js";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AppContext } from "../../bot/context";
-import { DISCORD_LIMITS } from "../../constants";
-import { handleVc } from "./vc";
+import { ChannelType } from "discord.js";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { apiRequest } from "../../testing/discord/server";
+import { createWorld, type World } from "../../testing/world";
 
-const mockRoom = {
-	id: "category-id",
-	setAdditionalVoiceChannels: vi.fn(),
-};
+let world: World;
 
-const mockRoomManager = {
-	get: vi.fn(),
-};
+beforeEach(async () => {
+	world = await createWorld();
+});
 
-const mockCtx = { roomManager: mockRoomManager } as unknown as AppContext;
+afterEach(() => {
+	world.dispose();
+});
 
-function makeInteraction(numberOption: number | null = 1): ChatInputCommandInteraction {
-	return {
-		channel: { id: "text-channel-id", parentId: "category-id" },
-		options: {
-			getInteger: vi.fn().mockReturnValue(numberOption),
-		},
-		user: { id: "user-id" },
-		deferReply: vi.fn().mockResolvedValue(undefined),
-		editReply: vi.fn().mockResolvedValue(undefined),
-	} as unknown as ChatInputCommandInteraction;
-}
+describe("実行条件", () => {
+	it("ルーム外から実行した場合は実行者にだけエラーを返す", async () => {
+		const { members } = await world.setupRoom("alice");
 
-describe("/room vc", () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-		mockRoomManager.get.mockReturnValue(mockRoom);
-		mockRoom.setAdditionalVoiceChannels.mockResolvedValue(undefined);
+		const run = await members[0].run("room vc", world.generalChannel, { number: 1 });
+
+		expect(run.publicMessages).toEqual([]);
+		expect(run.privateMessages).toEqual(["このコマンドはルーム内でのみ使用できます"]);
 	});
 
-	it("ルーム外から実行した場合はエラーを返す", async () => {
-		mockRoomManager.get.mockReturnValue(undefined);
-		const interaction = makeInteraction(1);
-		await handleVc(interaction, mockCtx);
-		expect(interaction.editReply).toHaveBeenCalledWith(expect.stringContaining("ルーム内でのみ"));
-		expect(mockRoom.setAdditionalVoiceChannels).not.toHaveBeenCalled();
+	it("追加ボイスチャンネルの数は0から25までしか指定できない（境界値）", async () => {
+		const { room, members } = await world.setupRoom("alice");
+
+		await expect(members[0].run("room vc", room.textChannel, { number: -1 })).rejects.toThrow(
+			RangeError,
+		);
+		await expect(members[0].run("room vc", room.textChannel, { number: 26 })).rejects.toThrow(
+			RangeError,
+		);
+		await members[0].run("room vc", room.textChannel, { number: 25 });
+		expect(room.additionalVoiceChannels).toHaveLength(25);
+	});
+});
+
+describe("追加ボイスチャンネルの変更", () => {
+	it("指定した数の追加ボイスチャンネルを「VC [番号]」の名前で作る", async () => {
+		const { room, members } = await world.setupRoom("alice");
+
+		const run = await members[0].run("room vc", room.textChannel, { number: 2 });
+
+		expect(run.publicMessages).toEqual(["追加VC数を2に変更しました"]);
+		expect(room.additionalVoiceChannels.map((channel) => channel.name)).toEqual([
+			"VC [1]",
+			"VC [2]",
+		]);
 	});
 
-	describe("境界値テスト: 指定数が 0〜MAX の範囲内にクランプされる", () => {
-		it("0 を指定したとき、0 がそのまま渡される", async () => {
-			const interaction = makeInteraction(0);
-			await handleVc(interaction, mockCtx);
-			expect(mockRoom.setAdditionalVoiceChannels).toHaveBeenCalledWith(0);
-		});
+	it("今より少ない数を指定すると、後ろから削除する", async () => {
+		const { room, members } = await world.setupRoom("alice");
+		await members[0].run("room vc", room.textChannel, { number: 3 });
 
-		it("MAX を指定したとき、MAX がそのまま渡される", async () => {
-			const interaction = makeInteraction(DISCORD_LIMITS.MAX_ADDITIONAL_VOICE_CHANNELS);
-			await handleVc(interaction, mockCtx);
-			expect(mockRoom.setAdditionalVoiceChannels).toHaveBeenCalledWith(
-				DISCORD_LIMITS.MAX_ADDITIONAL_VOICE_CHANNELS,
-			);
-		});
+		await members[0].run("room vc", room.textChannel, { number: 1 });
 
-		it("MAX+1 を指定したとき、MAX にクランプされる", async () => {
-			const interaction = makeInteraction(DISCORD_LIMITS.MAX_ADDITIONAL_VOICE_CHANNELS + 1);
-			await handleVc(interaction, mockCtx);
-			expect(mockRoom.setAdditionalVoiceChannels).toHaveBeenCalledWith(
-				DISCORD_LIMITS.MAX_ADDITIONAL_VOICE_CHANNELS,
-			);
-		});
-
-		it("負の値を指定したとき、0 にクランプされる", async () => {
-			const interaction = makeInteraction(-1);
-			await handleVc(interaction, mockCtx);
-			expect(mockRoom.setAdditionalVoiceChannels).toHaveBeenCalledWith(0);
-		});
+		expect(room.additionalVoiceChannels.map((channel) => channel.name)).toEqual(["VC [1]"]);
 	});
 
-	it("正常に変更した場合は完了メッセージを返す", async () => {
-		const interaction = makeInteraction(3);
-		await handleVc(interaction, mockCtx);
-		expect(mockRoom.setAdditionalVoiceChannels).toHaveBeenCalledWith(3);
-		expect(interaction.editReply).toHaveBeenLastCalledWith(expect.stringContaining("3"));
+	it("0を指定すると、追加ボイスチャンネルをすべて削除する", async () => {
+		const { room, members } = await world.setupRoom("alice");
+		await members[0].run("room vc", room.textChannel, { number: 2 });
+
+		await members[0].run("room vc", room.textChannel, { number: 0 });
+
+		expect(room.additionalVoiceChannels).toEqual([]);
 	});
 
-	it("setAdditionalVoiceChannels がエラーをスローした場合はエラーメッセージを返す", async () => {
-		mockRoom.setAdditionalVoiceChannels.mockRejectedValue(new Error("Discord API error"));
-		const interaction = makeInteraction(2);
-		await handleVc(interaction, mockCtx);
-		expect(interaction.editReply).toHaveBeenLastCalledWith(expect.stringContaining("エラー"));
+	it("変更に失敗した場合は、全員に見える応答を取り下げて実行者にだけ伝える", async () => {
+		const { room, members } = await world.setupRoom("alice");
+		world.server.fail(apiRequest("POST", /\/channels$/));
+
+		const run = await members[0].run("room vc", room.textChannel, { number: 1 });
+
+		expect(run.publicMessages).toEqual([]);
+		expect(run.privateMessages).toEqual(["VC数の変更中にエラーが発生しました"]);
+	});
+
+	it("作成の途中で失敗しても、作れたボイスチャンネルは以後の変更で扱える", async () => {
+		const { room, members } = await world.setupRoom("alice");
+		let created = 0;
+		world.server.fail(
+			(request) =>
+				apiRequest("POST", /\/channels$/)(request) &&
+				(request.body as { type: ChannelType }).type === ChannelType.GuildVoice &&
+				++created > 1,
+		);
+		await members[0].run("room vc", room.textChannel, { number: 2 });
+
+		await members[0].run("room vc", room.textChannel, { number: 0 });
+
+		expect(room.additionalVoiceChannels).toEqual([]);
 	});
 });

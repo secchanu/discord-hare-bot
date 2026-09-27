@@ -5,8 +5,7 @@ import { registerCommands } from "../commands";
 import { EXIT_CODE } from "../constants";
 
 /**
- * Bot起動時の処理
- * Discord.js の ClientReady イベントハンドラー
+ * Bot の起動時に、コマンドを登録してルームを復旧する
  */
 export const setupReadyHandler = (client: Client, ctx: AppContext): void => {
 	client.once(Events.ClientReady, async (readyClient) => {
@@ -15,16 +14,14 @@ export const setupReadyHandler = (client: Client, ctx: AppContext): void => {
 
 			const guild = await readyClient.guilds.fetch(ctx.config.guildId);
 
-			// コマンドの登録（単一ギルド運用のためギルドコマンドとして即時反映する）
 			await registerCommands(guild);
 
-			// ルームの復旧と整合性回復
 			await ctx.roomManager.recoverRooms(guild);
 			await ctx.roomManager.reconcile(guild);
 
 			console.log("Bot is ready!");
 		} catch (error) {
-			// 対象ギルドにアクセスできない場合は運用不能のため終了する
+			// 起動処理を終えられない Bot は運用できないため終了する
 			console.error("Failed to initialize bot:", error);
 			process.exit(EXIT_CODE.ERROR);
 		}

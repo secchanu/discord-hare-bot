@@ -1,10 +1,10 @@
 import type { Snowflake } from "discord.js";
 
 /**
- * ゲームデータ
+ * ゲーム
  */
 export interface Game {
-	id: Snowflake; // Role ID
+	id: Snowflake; // ゲームを表すロールのID
 	name: string;
 	data: {
 		[key: string]: string[];
@@ -12,7 +12,7 @@ export interface Game {
 }
 
 /**
- * デフォルトゲーム
+ * ゲームを指定していないルームのゲーム
  */
 export const defaultGame: Game = {
 	id: "",

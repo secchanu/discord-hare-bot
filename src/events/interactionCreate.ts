@@ -2,17 +2,16 @@ import type { Client, Interaction } from "discord.js";
 import { Events, MessageFlags } from "discord.js";
 import type { AppContext } from "../bot/context";
 import { handleCommand } from "../commands";
+import { replyError } from "../commands/helpers";
 import { TIMEOUT } from "../constants";
 
 /**
- * インタラクション作成時の処理
- * Discord.js の InteractionCreate イベントハンドラー
+ * インタラクションの作成時に、スラッシュコマンドを実行する
  */
 export const setupInteractionCreateHandler = (client: Client, ctx: AppContext): void => {
 	client.on(Events.InteractionCreate, async (interaction: Interaction) => {
-		// コンポーネント・モーダルは各コマンドのコレクターが処理する。
-		// Bot再起動でコレクターを失ったものだけがここで未応答のまま残るため、
-		// 猶予を置いて未応答なら期限切れとして返す
+		// コンポーネント操作とモーダル送信は、各コマンドのコレクターが応答する
+		// コレクターが終了した後の操作には、猶予を置いて期限切れを返す
 		if (interaction.isMessageComponent() || interaction.isModalSubmit()) {
 			setTimeout(async () => {
 				if (interaction.replied || interaction.deferred) return;
@@ -22,7 +21,7 @@ export const setupInteractionCreateHandler = (client: Client, ctx: AppContext): 
 						flags: MessageFlags.Ephemeral,
 					});
 				} catch {
-					// コレクターと競合した場合などの応答失敗は無視する
+					// 応答の失敗は無視する
 				}
 			}, TIMEOUT.ORPHANED_COMPONENT_GRACE);
 			return;
@@ -36,12 +35,10 @@ export const setupInteractionCreateHandler = (client: Client, ctx: AppContext): 
 		} catch (error) {
 			console.error("[InteractionCreate] Failed to handle command:", error);
 
-			const content = "コマンドの実行中にエラーが発生しました";
-
-			if (interaction.deferred || interaction.replied) {
-				await interaction.editReply({ content });
-			} else {
-				await interaction.reply({ content, flags: MessageFlags.Ephemeral });
+			try {
+				await replyError(interaction, "コマンドの実行中にエラーが発生しました");
+			} catch (notifyError) {
+				console.error("[InteractionCreate] Failed to notify error:", notifyError);
 			}
 		}
 	});

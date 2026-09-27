@@ -1,6 +1,6 @@
 /**
- * Bot設定
- * 環境変数から読み込み、composition root（index.ts）で検証して注入する
+ * Bot の設定
+ * 環境変数から読み込み、index.ts で検証してから createBot に渡す
  */
 
 interface BotConfig {
@@ -12,10 +12,10 @@ interface BotConfig {
 }
 
 /**
- * 環境変数から除外ロールIDをパース
- * 形式は "id:説明,id:説明,..." で、説明は人が読むためのもののため読み捨てる
+ * 除外ロールの環境変数からロールIDを取り出す
+ * 形式は "id:説明,id:説明,..." で、説明は人が読むためのものなので読み捨てる
  */
-export function parseIgnoreRoleIds(envValue: string | undefined): string[] {
+function parseIgnoreRoleIds(envValue: string | undefined): string[] {
 	if (!envValue) return [];
 
 	return envValue
@@ -25,7 +25,7 @@ export function parseIgnoreRoleIds(envValue: string | undefined): string[] {
 }
 
 /**
- * 環境変数から設定を読み込み
+ * 環境変数から設定を読み込む
  */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): BotConfig {
 	return {
@@ -38,8 +38,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BotConfig {
 }
 
 /**
- * 設定の検証
- * 不足している環境変数のエラーメッセージ一覧を返す
+ * 設定を検証し、未設定の必須環境変数ごとのエラーメッセージを返す
  */
 export function validateConfig(config: BotConfig): string[] {
 	const errors: string[] = [];

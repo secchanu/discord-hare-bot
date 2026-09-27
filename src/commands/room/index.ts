@@ -7,7 +7,7 @@ import { handleVc } from "./vc";
 
 /**
  * /room コマンド
- * ルーム管理関連のサブコマンド
+ * ルームを設定するサブコマンドをまとめる
  */
 export const roomCommand: CommandHandler = {
 	data: new SlashCommandBuilder()

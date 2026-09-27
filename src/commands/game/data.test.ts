@@ -1,436 +1,247 @@
-import type { ChatInputCommandInteraction } from "discord.js";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AppContext } from "../../bot/context";
-import { handleData } from "./data";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { TIME, TIMEOUT } from "../../constants";
+import type { RoleState } from "../../testing/discord/server";
+import { createWorld, type Member, type World } from "../../testing/world";
 
-vi.mock("../../types/guards", () => ({
-	hasRoleManager: vi.fn().mockReturnValue(true),
-}));
+let world: World;
 
-const mockGameManager = {
-	getGame: vi.fn(),
-	createGame: vi.fn(),
-	updateGameData: vi.fn(),
-};
+beforeEach(async () => {
+	world = await createWorld();
+});
 
-const mockCtx = {
-	gameManager: mockGameManager,
-	config: {
-		ignoreRoleIds: ["ignore-role-id"],
-	},
-} as unknown as AppContext;
+afterEach(() => {
+	world.dispose();
+});
 
-const EVERYONE_ROLE_ID = "everyone-role-id";
-
-function makeModalInteraction(
-	overrides: {
-		key?: string;
-		data?: string;
-		userId?: string;
-		customId?: string;
-	} = {},
-) {
-	return {
-		deferUpdate: vi.fn().mockResolvedValue(undefined),
-		editReply: vi.fn().mockResolvedValue(undefined),
-		fields: {
-			getTextInputValue: vi.fn().mockImplementation((field: string) => {
-				if (field === "key") return overrides.key ?? "newKey";
-				if (field === "data") return overrides.data ?? "item1\nitem2";
-				return "";
-			}),
-		},
-		user: { id: overrides.userId ?? "user-id" },
-		customId: overrides.customId ?? "game_data_msg-id",
-	};
-}
-
-function makeSelectInteraction(key: string, id: string = "select-id") {
-	const modalInteraction = makeModalInteraction({ customId: `game_data_${id}` });
-	return {
-		id,
-		values: [key],
-		showModal: vi.fn().mockResolvedValue(undefined),
-		awaitModalSubmit: vi.fn().mockResolvedValue(modalInteraction),
-		_modalInteraction: modalInteraction,
-	};
+/**
+ * ロール「APEX」を持つメンバーを用意し、必要ならそのゲームにデータを保存する
+ */
+async function setupGame(data?: Record<string, string[]>) {
+	const apex = world.addRole("APEX");
+	const alice = world.addMember("alice", { roles: [apex] });
+	if (data) await world.saveGameData(apex, data);
+	return { apex, alice };
 }
 
 /**
- * セレクトメニューのコレクターを模したメッセージを生成する
- * 渡した選択を順に collect し、送信で止まらなければ無操作タイムアウトで終了する
+ * /game data を実行してデータを選び、フォームを開く
  */
-function makeMessage(selectInteractions: Array<ReturnType<typeof makeSelectInteraction>>) {
-	const handlers: Record<string, (...args: never[]) => Promise<void>> = {};
-	const collector = {
-		ended: false,
-		on: vi.fn((event: string, handler: (...args: never[]) => Promise<void>) => {
-			handlers[event] = handler;
-			if (event === "end") void run();
-		}),
-		stop: vi.fn((reason: string) => {
-			if (collector.ended) return;
-			collector.ended = true;
-			void handlers.end?.(...([undefined, reason] as never[]));
-		}),
-	};
-	async function run() {
-		for (const selectInteraction of selectInteractions) {
-			if (collector.ended) return;
-			await handlers.collect?.(selectInteraction as never);
-		}
-		collector.stop("idle");
-	}
-	return {
-		id: "msg-id",
-		createMessageComponentCollector: vi.fn().mockReturnValue(collector),
-		edit: vi.fn().mockResolvedValue(undefined),
-	};
+async function openForm(member: Member, role: RoleState, key: string) {
+	const run = await member.run("game data", world.generalChannel, { game: role });
+	const message = run.response;
+	await member.select(message, "data_key", [key]);
+	return message;
 }
 
-function makeInteraction(
-	overrides: {
-		roleId?: string;
-		hasRole?: boolean;
-		inCachedGuild?: boolean;
-		message?: ReturnType<typeof makeMessage>;
-	} = {},
-) {
-	const { roleId = "game-role-id", hasRole = true, inCachedGuild = true, message } = overrides;
+describe("実行条件", () => {
+	it("@everyone を指定した場合は実行者にだけエラーを返す", async () => {
+		const { alice } = await setupGame();
 
-	const msg = message ?? makeMessage([makeSelectInteraction("新規作成")]);
+		const run = await alice.run("game data", world.generalChannel, { game: world.everyoneRole });
 
-	return {
-		inCachedGuild: vi.fn().mockReturnValue(inCachedGuild),
-		channel: { id: "text-channel-id" },
-		guild: {
-			id: "guild-id",
-			roles: {
-				everyone: { id: EVERYONE_ROLE_ID },
-			},
-		},
-		member: {
-			roles: {
-				cache: {
-					has: vi.fn().mockReturnValue(hasRole),
-				},
-			},
-		},
-		options: {
-			getRole: vi.fn().mockReturnValue({ id: roleId, name: "ゲームA" }),
-		},
-		user: { id: "user-id" },
-		reply: vi.fn().mockResolvedValue(undefined),
-		deferReply: vi.fn().mockResolvedValue(undefined),
-		editReply: vi.fn().mockImplementation(async () => msg),
-		deleteReply: vi.fn().mockResolvedValue(undefined),
-	} as unknown as ChatInputCommandInteraction;
-}
-
-describe("/game data", () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-		mockGameManager.updateGameData.mockResolvedValue(undefined);
+		expect(run.publicMessages).toEqual([]);
+		expect(run.privateMessages).toEqual(["このロールはゲームとして選択できません"]);
 	});
 
-	describe("ロールの検証", () => {
-		it("@everyone ロールは「選択できません」を返す", async () => {
-			const interaction = makeInteraction({ roleId: EVERYONE_ROLE_ID });
-			mockGameManager.getGame.mockResolvedValue(null);
-			await handleData(interaction, mockCtx);
-			expect(interaction.editReply).toHaveBeenCalledWith(expect.stringContaining("選択できません"));
-			expect(mockGameManager.getGame).not.toHaveBeenCalled();
-		});
+	it("除外ロールを指定した場合は実行者にだけエラーを返す", async () => {
+		const alice = world.addMember("alice", { roles: [world.ignoredRole] });
 
-		it("ignoreRoleIds に含まれるロールは「選択できません」を返す", async () => {
-			const interaction = makeInteraction({ roleId: "ignore-role-id" });
-			await handleData(interaction, mockCtx);
-			expect(interaction.editReply).toHaveBeenCalledWith(expect.stringContaining("選択できません"));
-			expect(mockGameManager.getGame).not.toHaveBeenCalled();
-		});
+		const run = await alice.run("game data", world.generalChannel, { game: world.ignoredRole });
 
-		it("メンバーがロールを持っていない場合は「付与されていない」を返す", async () => {
-			const interaction = makeInteraction({ hasRole: false });
-			await handleData(interaction, mockCtx);
-			expect(interaction.editReply).toHaveBeenCalledWith(
-				expect.stringContaining("付与されていない"),
-			);
-			expect(mockGameManager.getGame).not.toHaveBeenCalled();
-		});
-
-		it("ギルド外から実行した場合はエラーを返す", async () => {
-			const interaction = makeInteraction({ inCachedGuild: false });
-			await handleData(interaction, mockCtx);
-			expect(interaction.reply).toHaveBeenCalledWith(
-				expect.objectContaining({ content: expect.stringContaining("サーバー内でのみ") }),
-			);
-		});
+		expect(run.publicMessages).toEqual([]);
+		expect(run.privateMessages).toEqual(["このロールはゲームとして選択できません"]);
 	});
 
-	describe("モーダル入力の保存", () => {
-		beforeEach(() => {
-			mockGameManager.getGame.mockResolvedValue({
-				id: "game-role-id",
-				name: "ゲームA",
-				data: {},
-			});
-			mockGameManager.createGame.mockResolvedValue({
-				id: "game-role-id",
-				name: "ゲームA",
-				data: {},
-			});
-		});
+	it("持っていないロールを指定した場合は実行者にだけエラーを返す", async () => {
+		const apex = world.addRole("APEX");
+		const alice = world.addMember("alice");
 
-		it("モーダルのデータ文字列を改行で分割し、trim・空行フィルタをかける", async () => {
-			const selectInteraction = makeSelectInteraction("新規作成");
-			selectInteraction.awaitModalSubmit.mockResolvedValue(
-				makeModalInteraction({ key: "マップ", data: "  マップA  \n\n  マップB  \n" }),
-			);
-			const message = makeMessage([selectInteraction]);
-			const interaction = makeInteraction({ message });
+		const run = await alice.run("game data", world.generalChannel, { game: apex });
 
-			await handleData(interaction, mockCtx);
+		expect(run.publicMessages).toEqual([]);
+		expect(run.privateMessages).toEqual([
+			"このゲームは付与されていないため選択できません\n先に<id:customize>からプレイするゲームとして選択してください",
+		]);
+	});
+});
 
-			expect(mockGameManager.updateGameData).toHaveBeenCalledWith("game-role-id", "マップ", [
-				"マップA",
-				"マップB",
-			]);
-		});
+describe("編集するデータの選択", () => {
+	it("選択肢には、既存のデータと新規作成が並ぶ", async () => {
+		const { apex, alice } = await setupGame({ マップ: ["A"], キャラ: ["B"] });
 
-		it("データが空（空行のみ）の場合はキーを削除する", async () => {
-			mockGameManager.getGame.mockResolvedValue({
-				id: "game-role-id",
-				name: "ゲームA",
-				data: { マップ: ["マップA"] },
-			});
-			const selectInteraction = makeSelectInteraction("マップ");
-			selectInteraction.awaitModalSubmit.mockResolvedValue(
-				makeModalInteraction({ key: "マップ", data: "\n\n" }),
-			);
-			const message = makeMessage([selectInteraction]);
-			const interaction = makeInteraction({ message });
+		const run = await alice.run("game data", world.generalChannel, { game: apex });
 
-			await handleData(interaction, mockCtx);
-
-			expect(mockGameManager.updateGameData).toHaveBeenCalledWith("game-role-id", "マップ", null);
-		});
-
-		it("キー名変更時: 旧キーを削除し、新キーで作成する", async () => {
-			mockGameManager.getGame.mockResolvedValue({
-				id: "game-role-id",
-				name: "ゲームA",
-				data: { 旧キー: ["item1"] },
-			});
-			const selectInteraction = makeSelectInteraction("旧キー");
-			selectInteraction.awaitModalSubmit.mockResolvedValue(
-				makeModalInteraction({ key: "新キー", data: "item1\nitem2" }),
-			);
-			const message = makeMessage([selectInteraction]);
-			const interaction = makeInteraction({ message });
-
-			await handleData(interaction, mockCtx);
-
-			expect(mockGameManager.updateGameData).toHaveBeenCalledWith("game-role-id", "旧キー", null);
-			expect(mockGameManager.updateGameData).toHaveBeenCalledWith("game-role-id", "新キー", [
-				"item1",
-				"item2",
-			]);
-		});
+		expect(run.response.selectMenu("data_key")?.map((option) => option.value)).toEqual([
+			"マップ",
+			"キャラ",
+			"新規作成",
+		]);
 	});
 
-	describe("操作結果の表示", () => {
-		beforeEach(() => {
-			mockGameManager.createGame.mockResolvedValue({
-				id: "game-role-id",
-				name: "ゲームA",
-				data: {},
-			});
-		});
+	it("データが24件を超えても、選択肢の最後には新規作成が並ぶ（境界値）", async () => {
+		const keys = Array.from({ length: 25 }, (_, i) => `データ${i + 1}`);
+		const { apex, alice } = await setupGame(Object.fromEntries(keys.map((key) => [key, ["A"]])));
 
-		it("データを空にして送信した場合は削除したことを表示する", async () => {
-			mockGameManager.getGame.mockResolvedValue({
-				id: "game-role-id",
-				name: "ゲームA",
-				data: { マップ: ["マップA"] },
-			});
-			const selectInteraction = makeSelectInteraction("マップ");
-			const modalInteraction = makeModalInteraction({ key: "マップ", data: "" });
-			selectInteraction.awaitModalSubmit.mockResolvedValue(modalInteraction);
-			const message = makeMessage([selectInteraction]);
-			const interaction = makeInteraction({ message });
+		const run = await alice.run("game data", world.generalChannel, { game: apex });
 
-			await handleData(interaction, mockCtx);
+		expect(run.response.selectMenu("data_key")?.map((option) => option.value)).toEqual([
+			...keys.slice(0, 24),
+			"新規作成",
+		]);
+	});
 
-			expect(modalInteraction.editReply).toHaveBeenLastCalledWith(
-				expect.objectContaining({ content: expect.stringContaining("削除しました") }),
-			);
-		});
+	it("既存のデータを選ぶと、データ名と項目を入力済みのフォームが開く", async () => {
+		const { apex, alice } = await setupGame({ マップ: ["A", "B"] });
 
-		it("データ名を変えて送信した場合は変更前後のデータ名を表示する", async () => {
-			mockGameManager.getGame.mockResolvedValue({
-				id: "game-role-id",
-				name: "ゲームA",
-				data: { 旧キー: ["item1"] },
-			});
-			const selectInteraction = makeSelectInteraction("旧キー");
-			const modalInteraction = makeModalInteraction({ key: "新キー", data: "item1\nitem2" });
-			selectInteraction.awaitModalSubmit.mockResolvedValue(modalInteraction);
-			const message = makeMessage([selectInteraction]);
-			const interaction = makeInteraction({ message });
+		await openForm(alice, apex, "マップ");
 
-			await handleData(interaction, mockCtx);
+		expect(alice.modalFields).toEqual({ key: "マップ", data: "A\nB" });
+	});
 
-			expect(modalInteraction.editReply).toHaveBeenLastCalledWith(
-				expect.objectContaining({
-					content: expect.stringMatching(/「旧キー」.*「新キー」.*更新しました/),
-				}),
-			);
-		});
+	it("新規作成を選ぶと、空のフォームが開く", async () => {
+		const { apex, alice } = await setupGame({ マップ: ["A"] });
 
-		it("既存のデータを送信した場合は更新したことを表示する", async () => {
-			mockGameManager.getGame.mockResolvedValue({
-				id: "game-role-id",
-				name: "ゲームA",
-				data: { マップ: ["マップA"] },
-			});
-			const selectInteraction = makeSelectInteraction("マップ");
-			const modalInteraction = makeModalInteraction({ key: "マップ", data: "マップA\nマップB" });
-			selectInteraction.awaitModalSubmit.mockResolvedValue(modalInteraction);
-			const message = makeMessage([selectInteraction]);
-			const interaction = makeInteraction({ message });
+		await openForm(alice, apex, "新規作成");
 
-			await handleData(interaction, mockCtx);
+		expect(alice.modalFields).toEqual({ key: "", data: "" });
+	});
 
-			expect(modalInteraction.editReply).toHaveBeenLastCalledWith(
-				expect.objectContaining({ content: expect.stringContaining("更新しました") }),
-			);
-		});
+	it("フォームを開いた後、選択メニューは未選択に戻る", async () => {
+		const { apex, alice } = await setupGame({ マップ: ["A"] });
 
-		it("新規作成を送信した場合は作成したことを表示する", async () => {
-			mockGameManager.getGame.mockResolvedValue({
-				id: "game-role-id",
-				name: "ゲームA",
-				data: {},
-			});
-			const selectInteraction = makeSelectInteraction("新規作成");
-			const modalInteraction = makeModalInteraction({ key: "新データ", data: "item1\nitem2" });
-			selectInteraction.awaitModalSubmit.mockResolvedValue(modalInteraction);
-			const message = makeMessage([selectInteraction]);
-			const interaction = makeInteraction({ message });
+		const message = await openForm(alice, apex, "マップ");
 
-			await handleData(interaction, mockCtx);
+		expect(message.selectMenu("data_key")?.filter((option) => option.selected)).toEqual([]);
+	});
 
-			expect(modalInteraction.editReply).toHaveBeenLastCalledWith(
-				expect.objectContaining({ content: expect.stringContaining("作成しました") }),
-			);
-		});
+	it("実行者以外の選択は受け付けず、操作した人にだけ伝える", async () => {
+		const { apex, alice } = await setupGame({ マップ: ["A"] });
+		const run = await alice.run("game data", world.generalChannel, { game: apex });
+		const bob = world.addMember("bob", { roles: [apex] });
 
-		it("ゲームが存在しない場合は新規作成してから処理を続行する", async () => {
-			mockGameManager.getGame.mockResolvedValue(null);
-			mockGameManager.createGame.mockResolvedValue({
-				id: "game-role-id",
-				name: "ゲームA",
-				data: {},
-			});
-			const selectInteraction = makeSelectInteraction("新規作成");
-			selectInteraction.awaitModalSubmit.mockResolvedValue(
-				makeModalInteraction({ key: "新データ", data: "item1" }),
-			);
-			const message = makeMessage([selectInteraction]);
-			const interaction = makeInteraction({ message });
+		const record = await bob.select(run.response, "data_key", ["マップ"]);
 
-			await handleData(interaction, mockCtx);
+		expect(record.privateMessages).toEqual(["この操作はコマンドを実行した人のみ行えます"]);
+		expect(bob.modalFields).toBeUndefined();
+	});
+});
 
-			expect(mockGameManager.createGame).toHaveBeenCalled();
-			expect(mockGameManager.updateGameData).toHaveBeenCalled();
-		});
+describe("データの保存", () => {
+	it("新しいデータ名で送信すると、データを作って作成したことを表示する", async () => {
+		const { apex, alice } = await setupGame();
+		const message = await openForm(alice, apex, "新規作成");
 
-		it("モーダルがタイムアウトした場合は処理を終了する", async () => {
-			mockGameManager.getGame.mockResolvedValue({
-				id: "game-role-id",
-				name: "ゲームA",
-				data: {},
-			});
-			const selectInteraction = makeSelectInteraction("新規作成");
-			selectInteraction.awaitModalSubmit.mockResolvedValue(null);
-			const message = makeMessage([selectInteraction]);
-			const interaction = makeInteraction({ message });
+		await alice.submitModal({ key: "マップ", data: "A\nB" });
 
-			await handleData(interaction, mockCtx);
+		expect(message.content).toBe("APEX: 「マップ」のデータを作成しました\n`A, B`");
+		expect(await world.savedGameData(apex)).toEqual({ マップ: ["A", "B"] });
+	});
 
-			expect(mockGameManager.updateGameData).not.toHaveBeenCalled();
-		});
+	it("項目は改行で区切り、前後の空白と空行を除いて保存する", async () => {
+		const { apex, alice } = await setupGame();
+		await openForm(alice, apex, "新規作成");
 
-		it("モーダル表示後はセレクトメニューを未選択の状態で描き直す", async () => {
-			mockGameManager.getGame.mockResolvedValue({
-				id: "game-role-id",
-				name: "ゲームA",
-				data: {},
-			});
-			const selectInteraction = makeSelectInteraction("新規作成");
-			selectInteraction.awaitModalSubmit.mockResolvedValue(null);
-			const message = makeMessage([selectInteraction]);
-			const interaction = makeInteraction({ message });
+		await alice.submitModal({ key: "マップ", data: "  A  \n\n B \n" });
 
-			await handleData(interaction, mockCtx);
+		expect(await world.savedGameData(apex)).toEqual({ マップ: ["A", "B"] });
+	});
 
-			const editArgs = message.edit.mock.calls[0][0] as {
-				components: Array<{
-					components: Array<{
-						data: { custom_id: string };
-						options: Array<{ data: { default?: boolean } }>;
-					}>;
-				}>;
-			};
-			const select = editArgs.components[0].components[0];
-			expect(select.data.custom_id).toBe("data_key");
-			expect(select.options.some((o) => o.data.default === true)).toBe(false);
-		});
+	it("既存のデータを送信すると、更新して更新したことを表示する", async () => {
+		const { apex, alice } = await setupGame({ マップ: ["A"] });
+		const message = await openForm(alice, apex, "マップ");
 
-		it("モーダルをキャンセルして選び直した場合、送信されたモーダルの内容で保存する", async () => {
-			mockGameManager.getGame.mockResolvedValue({
-				id: "game-role-id",
-				name: "ゲームA",
-				data: { マップ: ["マップA"], キャラ: ["キャラA"] },
-			});
-			const cancelled = makeSelectInteraction("マップ", "select-1");
-			cancelled.awaitModalSubmit.mockResolvedValue(null);
-			const reselected = makeSelectInteraction("キャラ", "select-2");
-			reselected.awaitModalSubmit.mockResolvedValue(
-				makeModalInteraction({ key: "キャラ", data: "キャラA\nキャラB" }),
-			);
-			const message = makeMessage([cancelled, reselected]);
-			const interaction = makeInteraction({ message });
+		await alice.submitModal({ data: "A\nB" });
 
-			await handleData(interaction, mockCtx);
+		expect(message.content).toBe("APEX: 「マップ」のデータを更新しました\n`A, B`");
+		expect(await world.savedGameData(apex)).toEqual({ マップ: ["A", "B"] });
+	});
 
-			expect(reselected.showModal).toHaveBeenCalledOnce();
-			expect(mockGameManager.updateGameData).toHaveBeenCalledWith("game-role-id", "キャラ", [
-				"キャラA",
-				"キャラB",
-			]);
-			expect(mockGameManager.updateGameData).not.toHaveBeenCalledWith(
-				"game-role-id",
-				"マップ",
-				expect.anything(),
-			);
-		});
+	it("データ名を変えて送信すると、古いデータ名を消して名前を変えたことを表示する", async () => {
+		const { apex, alice } = await setupGame({ マップ: ["A"] });
+		const message = await openForm(alice, apex, "マップ");
 
-		it("選択がないまま無操作時間が過ぎた場合はタイムアウトを表示してメニューを取り除く", async () => {
-			mockGameManager.getGame.mockResolvedValue({
-				id: "game-role-id",
-				name: "ゲームA",
-				data: {},
-			});
-			const message = makeMessage([]);
-			const interaction = makeInteraction({ message });
+		await alice.submitModal({ key: "ステージ" });
 
-			await handleData(interaction, mockCtx);
+		expect(message.content).toBe("APEX: 「マップ」のデータを「ステージ」に更新しました\n`A`");
+		expect(await world.savedGameData(apex)).toEqual({ ステージ: ["A"] });
+	});
 
-			expect(message.edit).toHaveBeenLastCalledWith({
-				content: expect.stringContaining("タイムアウト"),
-				components: [],
-			});
-		});
+	it("項目を空にして送信すると、データを削除して削除したことを表示する", async () => {
+		const { apex, alice } = await setupGame({ マップ: ["A"], キャラ: ["B"] });
+		const message = await openForm(alice, apex, "マップ");
+
+		await alice.submitModal({ data: "\n  \n" });
+
+		expect(message.content).toBe("APEX: 「マップ」のデータを削除しました");
+		expect(await world.savedGameData(apex)).toEqual({ キャラ: ["B"] });
+	});
+
+	it("データ名が空白だけの場合は保存せず、編集画面を取り下げて実行者にだけ伝える", async () => {
+		const { apex, alice } = await setupGame();
+		const message = await openForm(alice, apex, "新規作成");
+
+		const record = await alice.submitModal({ key: "  ", data: "A" });
+
+		expect(record.privateMessages).toEqual(["APEX: データ名が入力されていません"]);
+		expect(world.message(message.id)).toBeUndefined();
+		expect(await world.savedGameData(apex)).toEqual({});
+	});
+
+	it("フォームを閉じて別のデータを選び直すと、送信したフォームの内容で保存する", async () => {
+		const { apex, alice } = await setupGame({ マップ: ["A"], キャラ: ["B"] });
+		const message = await openForm(alice, apex, "マップ");
+		alice.closeModal();
+		await alice.select(message, "data_key", ["キャラ"]);
+
+		await alice.submitModal({ data: "B\nC" });
+
+		expect(await world.savedGameData(apex)).toEqual({ マップ: ["A"], キャラ: ["B", "C"] });
+	});
+
+	it("保存したデータは、Botを再起動しても残る", async () => {
+		const { apex, alice } = await setupGame();
+		await openForm(alice, apex, "新規作成");
+		await alice.submitModal({ key: "マップ", data: "A" });
+
+		await world.restartBot();
+		await openForm(alice, apex, "マップ");
+
+		expect(alice.modalFields).toEqual({ key: "マップ", data: "A" });
+	});
+});
+
+describe("無操作の時間", () => {
+	it("選択がないまま無操作の時間が過ぎると、「タイムアウトしました」に置き換えてメニューを取り除く", async () => {
+		const { apex, alice } = await setupGame({ マップ: ["A"] });
+		const run = await alice.run("game data", world.generalChannel, { game: apex });
+
+		await world.advance(TIMEOUT.COMPONENT_IDLE);
+
+		expect(run.response.content).toBe("タイムアウトしました");
+		expect(run.response.selectMenu("data_key")).toBeUndefined();
+	});
+
+	it("無操作の時間を過ぎた後に送信したフォームは保存せず、操作した人にだけ期限切れを伝える", async () => {
+		const { apex, alice } = await setupGame({ マップ: ["A"] });
+		await openForm(alice, apex, "マップ");
+		await world.advance(TIMEOUT.COMPONENT_IDLE);
+
+		const record = await alice.submitModal({ data: "B" });
+		await world.advance(TIMEOUT.ORPHANED_COMPONENT_GRACE);
+
+		expect(record.privateMessages).toEqual([
+			"この操作は期限切れです\nコマンドを再実行してください",
+		]);
+		expect(await world.savedGameData(apex)).toEqual({ マップ: ["A"] });
+	});
+
+	it("フォームを開いてから無操作の時間に満たなければ、送信を保存する", async () => {
+		const { apex, alice } = await setupGame({ マップ: ["A"] });
+		await openForm(alice, apex, "マップ");
+		await world.advance(TIMEOUT.COMPONENT_IDLE - TIME.SECOND);
+
+		await alice.submitModal({ data: "B" });
+
+		expect(await world.savedGameData(apex)).toEqual({ マップ: ["B"] });
 	});
 });

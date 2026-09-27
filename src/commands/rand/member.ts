@@ -1,31 +1,29 @@
-import { type ChatInputCommandInteraction, type GuildMember, MessageFlags } from "discord.js";
-import { GUILD_ONLY_MESSAGE, isGuildInteraction } from "../helpers";
+import type { GuildMember } from "discord.js";
+import type { AppContext } from "../../bot/context";
+import { ROOM_ONLY_MESSAGE, replyError } from "../helpers";
+import { getRoomFromVoiceAndTextChannel } from "../helpers/room";
+import type { GuildCommandInteraction } from "../types";
 
 /**
  * /rand member サブコマンド
- * VCメンバーからランダム選択
+ * ボイスチャンネルのメンバーからランダムに選ぶ
  */
-export async function handleMember(interaction: ChatInputCommandInteraction): Promise<void> {
-	if (!isGuildInteraction(interaction)) {
-		await interaction.reply({ content: GUILD_ONLY_MESSAGE, flags: MessageFlags.Ephemeral });
-		return;
-	}
-
-	await interaction.deferReply();
-
+export async function handleMember(
+	interaction: GuildCommandInteraction,
+	ctx: AppContext,
+): Promise<void> {
+	const room = getRoomFromVoiceAndTextChannel(interaction, ctx.roomManager);
 	const channel = interaction.member.voice.channel;
-	if (!channel) {
-		await interaction.editReply("VCに接続していません");
+	if (!room || !channel) {
+		await replyError(interaction, ROOM_ONLY_MESSAGE);
 		return;
 	}
 
 	const number = interaction.options.getInteger("number") ?? 1;
+	// 実行者自身がボイスチャンネルにいるため、候補は1人以上いる
 	const members = channel.members.filter((m: GuildMember) => !m.user.bot);
 
-	if (members.size === 0) {
-		await interaction.editReply("選択可能なメンバーがいません");
-		return;
-	}
+	await interaction.deferReply();
 
 	const selected = members.random(Math.min(number, members.size));
 	const content = selected.map((m: GuildMember) => m.toString()).join("\n");

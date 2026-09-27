@@ -5,7 +5,7 @@ import type { BotConfig } from "./config";
 
 /**
  * アプリケーション全体の依存をまとめたコンテキスト
- * composition root（index.ts）で構築し、イベントハンドラー・コマンドへ注入する
+ * createBot で組み立て、イベントハンドラーとコマンドに渡す
  */
 export interface AppContext {
 	config: BotConfig;

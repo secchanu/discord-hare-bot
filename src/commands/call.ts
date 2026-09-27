@@ -1,11 +1,11 @@
-import { MessageFlags, SlashCommandBuilder } from "discord.js";
-import { GUILD_ONLY_MESSAGE, isGuildInteraction, ROOM_ONLY_MESSAGE } from "./helpers";
-import { getRoomFromVoiceChannel } from "./helpers/room";
+import { SlashCommandBuilder } from "discord.js";
+import { MOVE_FAILED_MESSAGE, ROOM_ONLY_MESSAGE, replyError } from "./helpers";
+import { getRoomFromVoiceAndTextChannel } from "./helpers/room";
 import type { CommandHandler } from "./types";
 
 /**
  * /call コマンド
- * メンバー全員を1つのVCに集合させる
+ * ルームのメンバー全員を1つのボイスチャンネルに集める
  */
 export const callCommand: CommandHandler = {
 	data: new SlashCommandBuilder()
@@ -19,27 +19,30 @@ export const callCommand: CommandHandler = {
 		),
 
 	async execute(interaction, ctx) {
-		if (!isGuildInteraction(interaction)) {
-			await interaction.reply({ content: GUILD_ONLY_MESSAGE, flags: MessageFlags.Ephemeral });
+		const room = getRoomFromVoiceAndTextChannel(interaction, ctx.roomManager);
+		if (!room) {
+			await replyError(interaction, ROOM_ONLY_MESSAGE);
+			return;
+		}
+
+		// 0 はメインのボイスチャンネル、1 以降は追加ボイスチャンネルを表す
+		const targetIndex = interaction.options.getInteger("number") ?? 0;
+		const maxIndex = room.additionalVoiceChannelCount;
+		if (targetIndex > maxIndex) {
+			await replyError(
+				interaction,
+				`${targetIndex}番のVCはありません（0〜${maxIndex}で指定してください）`,
+			);
 			return;
 		}
 
 		await interaction.deferReply();
 
-		const room = getRoomFromVoiceChannel(interaction, ctx.roomManager);
-		if (!room) {
-			await interaction.editReply(ROOM_ONLY_MESSAGE);
+		const moved = await room.callMembers(targetIndex);
+		if (!moved) {
+			await replyError(interaction, MOVE_FAILED_MESSAGE);
 			return;
 		}
-
-		const targetIndex = interaction.options.getInteger("number") ?? 0;
-
-		try {
-			await room.callMembers(targetIndex);
-			await interaction.editReply("メンバーを集合させました");
-		} catch (error) {
-			console.error("[call] Failed to call members:", error);
-			await interaction.editReply("メンバーの移動中にエラーが発生しました");
-		}
+		await interaction.editReply("メンバーを集合させました");
 	},
 };

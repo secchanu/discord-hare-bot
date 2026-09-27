@@ -1,65 +1,55 @@
 import {
 	ActionRowBuilder,
-	type ChatInputCommandInteraction,
-	ComponentType,
+	InteractionCollector,
 	inlineCode,
-	MessageFlags,
 	ModalBuilder,
 	type ModalSubmitInteraction,
 	type Role,
 	StringSelectMenuBuilder,
+	type StringSelectMenuInteraction,
 	TextInputBuilder,
 	TextInputStyle,
 } from "discord.js";
 import type { AppContext } from "../../bot/context";
 import { DISCORD_LIMITS, TIMEOUT } from "../../constants";
-import {
-	clearComponents,
-	createCommandUserFilter,
-	GUILD_ONLY_MESSAGE,
-	isGuildInteraction,
-	TIMEOUT_MESSAGE,
-} from "../helpers";
+import { clearComponents, createCommandUserFilter, replyError, TIMEOUT_MESSAGE } from "../helpers";
 import { getGameRoleError, INVALID_GAME_ROLE_MESSAGE } from "../helpers/game";
+import type { GuildCommandInteraction } from "../types";
 
 /**
  * /game data サブコマンド
- * ゲームデータの編集
+ * ゲームのデータを編集する
  */
 export async function handleData(
-	interaction: ChatInputCommandInteraction,
+	interaction: GuildCommandInteraction,
 	ctx: AppContext,
 ): Promise<void> {
-	if (!isGuildInteraction(interaction)) {
-		await interaction.reply({ content: GUILD_ONLY_MESSAGE, flags: MessageFlags.Ephemeral });
-		return;
-	}
-
-	await interaction.deferReply();
-
-	// @everyone はデフォルトゲームのため編集できない
+	// @everyone はデフォルトゲームを表すため、選択できないロールと同じエラーを返す
 	const role = interaction.options.getRole("game", true) as Role;
 	const roleError =
 		role.id === interaction.guild.roles.everyone.id
 			? INVALID_GAME_ROLE_MESSAGE
 			: getGameRoleError(interaction, role, ctx);
 	if (roleError) {
-		await interaction.editReply(roleError);
+		await replyError(interaction, roleError);
 		return;
 	}
 
 	const roleId = role.id;
 	const gameManager = ctx.gameManager;
+
+	await interaction.deferReply();
+
 	const game = (await gameManager.getGame(roleId)) ?? (await gameManager.createGame(role));
 
 	const gameName = game.name;
 	const gameData = game.data;
 
-	// データ選択メニュー
+	// 既存のデータは、新規作成の分を空けて上限まで並べる
 	const options = Object.keys(gameData)
+		.slice(0, DISCORD_LIMITS.MAX_SELECT_MENU_OPTIONS - 1)
 		.map((key) => ({ label: key, value: key }))
-		.concat([{ label: "新規作成", value: "新規作成" }])
-		.slice(0, DISCORD_LIMITS.MAX_SELECT_MENU_OPTIONS);
+		.concat([{ label: "新規作成", value: "新規作成" }]);
 
 	const selectMenu = new StringSelectMenuBuilder()
 		.setCustomId("data_key")
@@ -90,18 +80,12 @@ export async function handleData(
 			.map((d) => d.trim())
 			.filter((d) => d);
 
-		// 元のコマンドのインタラクショントークンは15分で失効するため、
-		// モーダル送信（最大1時間待つ）以降の編集はモーダル側のインタラクションで行う
 		if (!newKey) {
-			await modalInteraction.editReply({
-				content: `${gameName}: データ名が入力されていません`,
-				components: [],
-			});
+			await replyError(modalInteraction, `${gameName}: データ名が入力されていません`);
 			return;
 		}
 
 		if (!newData.length) {
-			// データ削除
 			await gameManager.updateGameData(roleId, newKey, null);
 			await modalInteraction.editReply({
 				content: `${gameName}: 「${newKey}」のデータを削除しました`,
@@ -112,7 +96,6 @@ export async function handleData(
 
 		const update = inlineCode(newData.join(", "));
 		if (!exists) {
-			// データ作成
 			await gameManager.updateGameData(roleId, newKey, newData);
 			await modalInteraction.editReply({
 				content: `${gameName}: 「${newKey}」のデータを作成しました\n${update}`,
@@ -121,7 +104,7 @@ export async function handleData(
 			return;
 		}
 
-		// データ更新（データ名が変わった場合は古いデータ名を削除する）
+		// データ名の変更に対応するため、古いデータ名を削除してから保存する
 		await gameManager.updateGameData(roleId, dataKey, null);
 		await gameManager.updateGameData(roleId, newKey, newData);
 		const content =
@@ -131,25 +114,40 @@ export async function handleData(
 		await modalInteraction.editReply({ content, components: [] });
 	};
 
-	// データ選択を待つ。
-	// モーダルのキャンセルは通知されないため、送信されるまでメニューを残して選び直せるようにする
-	const collector = message.createMessageComponentCollector({
-		componentType: ComponentType.StringSelect,
-		filter: createCommandUserFilter(interaction.user.id),
-		idle: TIMEOUT.INTERACTION,
-	});
+	// セレクトメニューの操作とモーダル送信を1つのセッションで受け付ける
+	// モーダル送信は開いた元のメッセージに紐づくため、同じコレクターで受け取れる
+	const collector = new InteractionCollector<StringSelectMenuInteraction | ModalSubmitInteraction>(
+		interaction.client,
+		{
+			message,
+			filter: createCommandUserFilter(interaction.user.id),
+			idle: TIMEOUT.COMPONENT_IDLE,
+		},
+	);
 
-	let submitted = false;
+	// 開いたモーダルごとの編集対象
+	// モーダルを閉じて選び直すと新しいモーダルが開くため、複数のモーダルを並行して扱う
+	const openedModals = new Map<string, { dataKey: string; exists: boolean }>();
 
 	await new Promise<void>((resolve) => {
-		collector.on("collect", async (selectInteraction) => {
+		collector.on("collect", async (collected) => {
+			if (collected.isModalSubmit()) {
+				const target = openedModals.get(collected.customId);
+				if (!target) return;
+				collector.stop("submit");
+				await saveData(collected, target.dataKey, target.exists);
+				resolve();
+				return;
+			}
+
+			const selectInteraction = collected;
 			const dataKey = selectInteraction.values[0];
 			const exists = dataKey !== "新規作成" && dataKey in gameData;
 			const items = exists ? gameData[dataKey] : [];
 
-			// モーダルで編集
+			const modalId = `game_data_${selectInteraction.id}`;
 			const modal = new ModalBuilder()
-				.setCustomId(`game_data_${selectInteraction.id}`)
+				.setCustomId(modalId)
 				.setTitle(`${gameName}: ゲームデータの編集`)
 				.addComponents(
 					new ActionRowBuilder<TextInputBuilder>().addComponents(
@@ -170,27 +168,13 @@ export async function handleData(
 					),
 				);
 
+			openedModals.set(modalId, { dataKey, exists });
 			await selectInteraction.showModal(modal);
 
-			// メニューを描き直して選択状態を戻し、同じデータも選び直せるようにする
+			// セレクトメニューを描き直して選択状態を戻し、同じデータも選び直せるようにする
 			if (!collector.ended) {
 				await message.edit({ components: [selectRow] });
 			}
-
-			// モーダル送信を待つ
-			const modalInteraction = await selectInteraction
-				.awaitModalSubmit({
-					filter: (i) => i.user.id === interaction.user.id && i.customId === modal.data.custom_id,
-					time: TIMEOUT.MODAL_SUBMIT,
-				})
-				.catch(() => null);
-
-			if (!modalInteraction || submitted) return;
-			submitted = true;
-			collector.stop("submit");
-
-			await saveData(modalInteraction, dataKey, exists);
-			resolve();
 		});
 
 		collector.on("end", async (_collected, reason) => {

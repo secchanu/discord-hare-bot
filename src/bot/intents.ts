@@ -1,8 +1,8 @@
 import { GatewayIntentBits } from "discord.js";
 
 /**
- * Bot に必要な Gateway Intents
- * 募集メッセージの判定はメンション情報のみを使うため MessageContent は不要
+ * Bot が購読するゲートウェイインテント
+ * 募集メッセージはメンションだけで判定するため、GuildMessages で足りる
  */
 export const intents = [
 	GatewayIntentBits.Guilds,

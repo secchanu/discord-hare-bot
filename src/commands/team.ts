@@ -14,11 +14,11 @@ import {
 	clearComponents,
 	createCommandUserFilter,
 	createDrawButtonRow,
-	GUILD_ONLY_MESSAGE,
-	isGuildInteraction,
+	MOVE_FAILED_MESSAGE,
 	ROOM_ONLY_MESSAGE,
+	replyError,
 } from "./helpers";
-import { getRoomFromVoiceChannel } from "./helpers/room";
+import { getRoomFromVoiceAndTextChannel } from "./helpers/room";
 import type { CommandHandler } from "./types";
 
 const NOT_ENOUGH_MEMBERS_MESSAGE = "チーム分けには2人以上のメンバーが必要です";
@@ -36,37 +36,28 @@ export const teamCommand: CommandHandler = {
 		),
 
 	async execute(interaction, ctx) {
-		if (!isGuildInteraction(interaction)) {
-			await interaction.reply({ content: GUILD_ONLY_MESSAGE, flags: MessageFlags.Ephemeral });
+		// 移動ボタンはルームがある間残すため、結果はそのルーム内のチャンネルに出す
+		// ルームの削除でチャンネルごとメッセージが消えると、コレクターも終了する
+		const room = getRoomFromVoiceAndTextChannel(interaction, ctx.roomManager);
+		const channel = interaction.member.voice.channel;
+		if (!room || !channel) {
+			await replyError(interaction, ROOM_ONLY_MESSAGE);
+			return;
+		}
+
+		const number = interaction.options.getInteger("number") ?? 2;
+		// チーム分けの候補は、ボイスチャンネルにいる Bot 以外のメンバー
+		const candidates = channel.members.filter((m: GuildMember) => !m.user.bot);
+		if (candidates.size < 2) {
+			await replyError(interaction, NOT_ENOUGH_MEMBERS_MESSAGE);
 			return;
 		}
 
 		await interaction.deferReply();
 
-		const room = getRoomFromVoiceChannel(interaction, ctx.roomManager);
-		if (!room) {
-			await interaction.editReply(ROOM_ONLY_MESSAGE);
-			return;
-		}
-
-		const channel = interaction.member.voice.channel;
-		if (!channel) {
-			await interaction.editReply("このコマンドはルーム内のボイスチャンネルでのみ使用できます");
-			return;
-		}
-
-		const number = interaction.options.getInteger("number") ?? 2;
-		// チーム分けの候補（VC内のbot以外）
-		const candidates = channel.members.filter((m: GuildMember) => !m.user.bot);
-		if (candidates.size < 2) {
-			await interaction.editReply(NOT_ENOUGH_MEMBERS_MESSAGE);
-			return;
-		}
-
 		// 除外メニューで選ばれたメンバー
 		let excludedIds = new Set<string>();
 
-		// チーム分け関数
 		const createTeams = (): Collection<string, GuildMember>[] => {
 			const members = candidates.filter((m: GuildMember) => !excludedIds.has(m.id));
 			const teamCount = Math.max(2, Math.min(number, members.size));
@@ -91,7 +82,7 @@ export const teamCommand: CommandHandler = {
 
 		let teams = createTeams();
 
-		// 除外メニュー: 選択状態を反映するため描画のたびに組み立てる
+		// 除外メニューは、選択状態を反映するため描画のたびに組み立てる
 		const buildExcludeRow = () =>
 			new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
 				new StringSelectMenuBuilder()
@@ -117,10 +108,8 @@ export const teamCommand: CommandHandler = {
 			new ButtonBuilder().setCustomId("move").setLabel("移動").setStyle(ButtonStyle.Primary),
 		);
 
-		// 抽選中の表示
 		const buildDrawingRows = () => [buildExcludeRow(), actionRow];
 
-		// チーム表示
 		const formatTeams = () => {
 			const teamList = teams
 				.map((members, i) => {
@@ -141,12 +130,44 @@ export const teamCommand: CommandHandler = {
 			components: buildDrawingRows(),
 		});
 
-		// セッションUI: 無操作が続いたら終了する。
-		// 15分（コマンドのインタラクショントークンの有効期限）を超えて操作され得るため、
-		// 以降のメッセージ編集は各コンポーネントのインタラクション経由で行う
+		const filter = createCommandUserFilter(interaction.user.id);
+
+		// 確定後の移動セッションは、同じチームで試合を繰り返すため、ルームが削除されるまで残す
+		const startMoveSession = () => {
+			const moveCollector = message.createMessageComponentCollector({ filter });
+
+			moveCollector.on("collect", async (componentInteraction) => {
+				if (componentInteraction.customId !== "move") return;
+				await componentInteraction.deferUpdate();
+
+				// 各チームを番号の同じ追加ボイスチャンネルへ移動するため、チーム数まで追加ボイスチャンネルを増やす
+				if (room.additionalVoiceChannelCount < teams.length) {
+					await room.setAdditionalVoiceChannels(teams.length);
+				}
+
+				const results = await Promise.all(
+					teams.flatMap((teamMembers, index) =>
+						teamMembers.map((member) => room.moveMembers(member.voice, index + 1)),
+					),
+				);
+
+				await componentInteraction.editReply({
+					content: formatTeams(),
+					components: [moveRow],
+				});
+				// 移動ボタンは同じチームでの再移動に使うため残し、失敗は操作した人にだけ伝える
+				if (!results.every(Boolean)) {
+					await componentInteraction.followUp({
+						content: MOVE_FAILED_MESSAGE,
+						flags: MessageFlags.Ephemeral,
+					});
+				}
+			});
+		};
+
 		const collector = message.createMessageComponentCollector({
 			idle: TIMEOUT.COMPONENT_IDLE,
-			filter: createCommandUserFilter(interaction.user.id),
+			filter,
 		});
 
 		collector.on("collect", async (componentInteraction) => {
@@ -182,6 +203,8 @@ export const teamCommand: CommandHandler = {
 					break;
 
 				case "confirm":
+					collector.stop("confirm");
+					startMoveSession();
 					await componentInteraction.update({ components: [moveRow] });
 					break;
 
@@ -192,32 +215,12 @@ export const teamCommand: CommandHandler = {
 						components: buildDrawingRows(),
 					});
 					break;
-
-				case "move": {
-					await componentInteraction.deferUpdate();
-
-					// 必要なVCを確保（チーム数と同じ数の追加VCが必要）
-					if (room.additionalVoiceChannelCount < teams.length) {
-						await room.setAdditionalVoiceChannels(teams.length);
-					}
-
-					// チームごとに移動（すべてのチームを追加VCに移動）
-					const movePromises = teams.flatMap((teamMembers, index) =>
-						teamMembers.map((member) => room.moveMembers(member.voice, index + 1)),
-					);
-
-					await Promise.all(movePromises);
-					await componentInteraction.editReply({
-						content: formatTeams(),
-						components: [moveRow],
-					});
-					break;
-				}
 			}
 		});
 
 		collector.on("end", async (_collected, reason) => {
-			if (reason === "cancel") return;
+			// 確定後は移動セッションがメッセージを引き継ぐ
+			if (reason === "cancel" || reason === "confirm") return;
 			await clearComponents(message);
 		});
 	},

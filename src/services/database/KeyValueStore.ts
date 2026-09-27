@@ -3,19 +3,24 @@ import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 /**
+ * sqlite ディレクトリにあるデータベースファイルを開く
+ */
+export function openDatabase(filename: string): DatabaseSync {
+	const dbPath = resolve(process.cwd(), "sqlite", filename);
+	mkdirSync(dirname(dbPath), { recursive: true });
+
+	const db = new DatabaseSync(dbPath);
+	console.log(`[Database] Opened: ${dbPath}`);
+	return db;
+}
+
+/**
  * SQLite ベースのキーバリューストア
  * 値は JSON シリアライズされるため、型が保てない値は呼び出し側で変換する
  */
 export class KeyValueStore<T> {
-	private db: DatabaseSync;
-
-	constructor(filename: string) {
-		const dbPath = resolve(process.cwd(), "sqlite", filename);
-		mkdirSync(dirname(dbPath), { recursive: true });
-
-		this.db = new DatabaseSync(dbPath);
+	constructor(private db: DatabaseSync) {
 		this.db.exec("CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
-		console.log(`[Database] Opened: ${dbPath}`);
 	}
 
 	get(key: string): T | undefined {

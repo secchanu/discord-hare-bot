@@ -1,40 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { loadConfig, parseIgnoreRoleIds, validateConfig } from "./config";
+import { loadConfig, validateConfig } from "./config";
 
-describe("parseIgnoreRoleIds", () => {
-	it("未設定の場合は空配列を返す", () => {
-		expect(parseIgnoreRoleIds(undefined)).toEqual([]);
-		expect(parseIgnoreRoleIds("")).toEqual([]);
-	});
+const env = {
+	DISCORD_BOT_TOKEN: "token",
+	DISCORD_GUILD_ID: "guild-1",
+	DISCORD_READY_CHANNEL_ID: "111",
+	DISCORD_WANTED_CHANNEL_ID: "222",
+};
 
-	it("カンマ区切りの各項目からIDを取り出す", () => {
-		expect(parseIgnoreRoleIds("111:管理者,222:モデレーター")).toEqual(["111", "222"]);
-	});
-
-	it("説明のない項目はそのままIDになる", () => {
-		expect(parseIgnoreRoleIds("123456789")).toEqual(["123456789"]);
-	});
-
-	it("IDの前後の空白を除去する", () => {
-		expect(parseIgnoreRoleIds(" 123 :ノート")).toEqual(["123"]);
-	});
-
-	it("IDが空の項目は除外する", () => {
-		expect(parseIgnoreRoleIds(":ノート,123:有効")).toEqual(["123"]);
-	});
-});
-
-describe("loadConfig", () => {
+describe("設定の読み込み", () => {
 	it("環境変数から設定を読み込む", () => {
-		const config = loadConfig({
-			DISCORD_BOT_TOKEN: "token",
-			DISCORD_GUILD_ID: "guild-1",
-			DISCORD_READY_CHANNEL_ID: "111",
-			DISCORD_WANTED_CHANNEL_ID: "222",
-			DISCORD_IGNORE_ROLES: "333:管理者",
-		});
-
-		expect(config).toEqual({
+		expect(loadConfig({ ...env, DISCORD_IGNORE_ROLES: "333:管理者" })).toEqual({
 			botToken: "token",
 			guildId: "guild-1",
 			readyChannelId: "111",
@@ -43,60 +19,34 @@ describe("loadConfig", () => {
 		});
 	});
 
-	it("未設定の環境変数は空値になる", () => {
-		const config = loadConfig({});
+	it("除外ロールは「ID:説明」をカンマで区切って並べ、説明の省略とIDの前後の空白を許す", () => {
+		const config = loadConfig({ ...env, DISCORD_IGNORE_ROLES: " 111 :管理者,222, 333 " });
 
-		expect(config).toEqual({
-			botToken: "",
-			guildId: "",
-			readyChannelId: "",
-			wantedChannelId: "",
-			ignoreRoleIds: [],
-		});
+		expect(config.ignoreRoleIds).toEqual(["111", "222", "333"]);
+	});
+
+	it("IDが空の除外ロールの項目は読み捨てる", () => {
+		const config = loadConfig({ ...env, DISCORD_IGNORE_ROLES: ":説明だけ,,111:管理者" });
+
+		expect(config.ignoreRoleIds).toEqual(["111"]);
+	});
+
+	it("除外ロールが未設定の場合は、除外するロールはない", () => {
+		expect(loadConfig(env).ignoreRoleIds).toEqual([]);
 	});
 });
 
-describe("validateConfig", () => {
-	const validConfig = {
-		botToken: "token",
-		guildId: "guild-1",
-		readyChannelId: "111",
-		wantedChannelId: "222",
-		ignoreRoleIds: [],
-	};
-
-	it("全必須フィールドが揃っている場合はエラーなし", () => {
-		expect(validateConfig(validConfig)).toEqual([]);
+describe("設定の検証", () => {
+	it("必須の環境変数がそろっていればエラーはない", () => {
+		expect(validateConfig(loadConfig(env))).toEqual([]);
 	});
 
-	it("botTokenが空の場合はエラーが返る", () => {
-		const errors = validateConfig({ ...validConfig, botToken: "" });
-		expect(errors).toEqual(["DISCORD_BOT_TOKEN is required"]);
-	});
-
-	it("guildIdが空の場合はエラーが返る", () => {
-		const errors = validateConfig({ ...validConfig, guildId: "" });
-		expect(errors).toEqual(["DISCORD_GUILD_ID is required"]);
-	});
-
-	it("readyChannelIdが空の場合はエラーが返る", () => {
-		const errors = validateConfig({ ...validConfig, readyChannelId: "" });
-		expect(errors).toEqual(["DISCORD_READY_CHANNEL_ID is required"]);
-	});
-
-	it("wantedChannelIdが空の場合はエラーが返る", () => {
-		const errors = validateConfig({ ...validConfig, wantedChannelId: "" });
-		expect(errors).toEqual(["DISCORD_WANTED_CHANNEL_ID is required"]);
-	});
-
-	it("複数フィールドが空の場合は全てのエラーが返る", () => {
-		const errors = validateConfig({
-			...validConfig,
-			botToken: "",
-			guildId: "",
-			readyChannelId: "",
-			wantedChannelId: "",
-		});
-		expect(errors).toHaveLength(4);
+	it("未設定の必須の環境変数をすべてエラーとして返す", () => {
+		expect(validateConfig(loadConfig({}))).toEqual([
+			"DISCORD_BOT_TOKEN is required",
+			"DISCORD_GUILD_ID is required",
+			"DISCORD_READY_CHANNEL_ID is required",
+			"DISCORD_WANTED_CHANNEL_ID is required",
+		]);
 	});
 });

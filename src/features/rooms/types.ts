@@ -3,11 +3,11 @@ import type { Game } from "../games/types";
 import type { Room } from "./Room";
 
 /**
- * 永続化可能なルームデータ
+ * 永続化するルームのデータ
  * createdAt は JSON シリアライズで型が保てないため ISO 文字列で保持する
  */
 export interface RoomData {
-	id: Snowflake; // categoryId
+	id: Snowflake; // カテゴリーのID
 	guildId: Snowflake;
 	hostname: string;
 	ownerId?: Snowflake;
@@ -24,7 +24,7 @@ export interface RoomData {
 }
 
 /**
- * ルーム作成オプション
+ * ルームの作成オプション
  */
 export interface CreateRoomOptions {
 	hostname: string;
@@ -39,8 +39,8 @@ export interface CreateRoomOptions {
  */
 export interface RoomHooks {
 	/**
-	 * ルームの状態変更を永続化する
-	 * Room の各 mutation メソッドが変更後に必ず呼ぶため、呼び出し側での保存は不要
+	 * ルームの状態を永続化する
+	 * Room の状態を変更するメソッドが、変更のたびに呼ぶ
 	 */
 	persist: (room: Room) => Promise<void>;
 }

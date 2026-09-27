@@ -5,7 +5,7 @@ import { handleMember } from "./member";
 
 /**
  * /rand コマンド
- * ランダム選択関連のサブコマンド
+ * ランダムに選ぶサブコマンドをまとめる
  */
 export const randCommand: CommandHandler = {
 	data: new SlashCommandBuilder()
@@ -28,7 +28,7 @@ export const randCommand: CommandHandler = {
 
 		switch (subcommand) {
 			case "member":
-				await handleMember(interaction);
+				await handleMember(interaction, ctx);
 				break;
 			case "data":
 				await handleData(interaction, ctx);

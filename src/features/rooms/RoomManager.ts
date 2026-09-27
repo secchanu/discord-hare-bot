@@ -13,12 +13,11 @@ import { Room } from "./Room";
 import type { RoomStore } from "./RoomStore";
 import type { RoomHooks } from "./types";
 
-// 初期ゲーム判定で遡る募集メッセージ数
+// 初期ゲームの判定で遡る募集メッセージの数
 const WANTED_LOOKUP_LIMIT = 50;
 
 /**
- * ルームマネージャー
- * ルームの検索・作成・削除・永続化を一手に引き受ける唯一の窓口
+ * ルームの検索・作成・削除・永続化を一手に引き受ける
  */
 export class RoomManager {
 	private rooms = new Collection<Snowflake, Room>();
@@ -38,28 +37,28 @@ export class RoomManager {
 	}
 
 	/**
-	 * ルームを取得
+	 * ルームを取得する
 	 */
 	get(roomId: Snowflake): Room | undefined {
 		return this.rooms.get(roomId);
 	}
 
 	/**
-	 * スケジュールイベントIDからルームを検索
+	 * スケジュールイベントのIDからルームを探す
 	 */
 	findByEventId(eventId: Snowflake): Room | undefined {
 		return this.rooms.find((room) => room.eventId === eventId);
 	}
 
 	/**
-	 * メンバーが参加しているルームを検索
+	 * メンバーが参加しているルームを探す
 	 */
 	findByMemberId(memberId: Snowflake): Room | undefined {
 		return this.rooms.find((room) => room.members.has(memberId));
 	}
 
 	/**
-	 * ルームを作成（準備チャンネルへの参加時）
+	 * 準備チャンネルに入ったメンバーのルームを作成し、そのボイスチャンネルへ移動する
 	 */
 	async createRoom(newState: VoiceState): Promise<void> {
 		if (!newState.member || !newState.channel) return;
@@ -84,7 +83,6 @@ export class RoomManager {
 			const roomId = await room.create(position);
 			this.rooms.set(roomId, room);
 
-			// オーナーを作成したルームのボイスチャンネルに移動
 			await room.moveMembers(newState);
 		} catch (error) {
 			console.error("[RoomManager] Failed to create room:", error);
@@ -92,8 +90,8 @@ export class RoomManager {
 	}
 
 	/**
-	 * イベント用の予約ルームを作成
-	 * 失敗時は例外を投げる（呼び出し側でハンドリングする）
+	 * イベントのルームを予約済みとして作成する
+	 * 作成の失敗は呼び出し側に投げる
 	 */
 	async createReservedRoom(
 		guild: Guild,
@@ -117,18 +115,17 @@ export class RoomManager {
 
 	/**
 	 * ルームのゲームを変更する
-	 * ロールの妥当性検証とゲームの解決（必要なら作成）を行う
+	 * ロールを検証し、ロールのゲームを解決する（未登録なら作成する）
 	 * @returns 設定されたゲーム。無効なロールの場合は null
 	 */
 	async changeGame(room: Room, roleId: Snowflake): Promise<Game | null> {
 		const guild = room.guild;
 
-		// @everyoneの場合はデフォルトゲームを使用
+		// @everyone はデフォルトゲームを表す
 		if (roleId === guild.roles.everyone.id) {
 			roleId = this.gameManager.getDefaultGame().id;
 		}
 
-		// 同じゲームの場合は処理をスキップ
 		if (room.game.id === roleId) return room.game;
 
 		const game = await this.resolveGameForRole(guild, roleId);
@@ -139,7 +136,7 @@ export class RoomManager {
 	}
 
 	/**
-	 * ロールIDからゲームを解決する（未登録ならロールから新規作成）
+	 * ロールのゲームを解決する（未登録ならロールから作成する）
 	 */
 	private async resolveGameForRole(guild: Guild, roleId: Snowflake): Promise<Game | null> {
 		const game = await this.gameManager.getGame(roleId);
@@ -155,7 +152,7 @@ export class RoomManager {
 
 	/**
 	 * オーナーの直近の募集メッセージから初期ゲームを決定する
-	 * キャッシュは再起動でクリアされるため、過去メッセージは fetch で取得する
+	 * メッセージのキャッシュは再起動で消えるため、過去のメッセージは fetch で取得する
 	 */
 	private async resolveInitialGame(guild: Guild, owner: GuildMember): Promise<Game> {
 		const fallback = this.gameManager.getDefaultGame();
@@ -164,7 +161,7 @@ export class RoomManager {
 			const wantedChannel = guild.channels.resolve(this.config.wantedChannelId);
 			if (!wantedChannel?.isTextBased()) return fallback;
 
-			// fetch はメッセージを新しい順で返すため find で直近の募集が取れる
+			// fetch はメッセージを新しい順で返すため、find で直近の募集が取れる
 			const messages = await wantedChannel.messages.fetch({ limit: WANTED_LOOKUP_LIMIT });
 			const lastMessage = messages.find(
 				(message) => message.author.id === owner.id && message.mentions.roles.size > 0,
@@ -185,7 +182,7 @@ export class RoomManager {
 	}
 
 	/**
-	 * メンバーの移動を処理
+	 * メンバーのルーム間の移動を処理する
 	 */
 	async handleMemberMove(oldState: VoiceState, newState: VoiceState): Promise<void> {
 		const oldRoomId = oldState.channel?.parentId;
@@ -194,7 +191,7 @@ export class RoomManager {
 		if (oldRoomId === newRoomId) return;
 		if (!newState.member) return;
 
-		// 新しいルームに参加
+		// 入ったルームでは専用チャットを見せる
 		if (newRoomId) {
 			const newRoom = this.rooms.get(newRoomId);
 			if (newRoom) {
@@ -202,7 +199,7 @@ export class RoomManager {
 			}
 		}
 
-		// 古いルームから退出（空になったら削除）
+		// 抜けたルームは、誰もいなければ削除する
 		if (oldRoomId) {
 			const oldRoom = this.rooms.get(oldRoomId);
 			if (oldRoom) {
@@ -212,8 +209,8 @@ export class RoomManager {
 	}
 
 	/**
-	 * ルームを削除し、成功したらメモリとストアから除去する
-	 * @returns 削除されたかどうか（予約中・メンバー在室の場合は false）
+	 * ルームを削除し、削除できたらメモリとストアから取り除く
+	 * @returns 削除できたか（予約中・メンバー在室の場合は false）
 	 */
 	async removeRoom(room: Room): Promise<boolean> {
 		const roomId = room.id;
@@ -228,7 +225,7 @@ export class RoomManager {
 	}
 
 	/**
-	 * Bot再起動時のルーム復旧
+	 * Bot の起動時に、保存されているルームを復旧する
 	 */
 	async recoverRooms(guild: Guild): Promise<void> {
 		console.log("[RoomManager] Recovering guild rooms...");
@@ -257,7 +254,7 @@ export class RoomManager {
 			} catch (error) {
 				console.error(`[RoomManager] Failed to recover room ${roomData.id}:`, error);
 				failedCount++;
-				// 復旧できないルームは削除
+				// 復旧できないルームは保存データから消す
 				await this.store.delete(roomData.id);
 			}
 		}
@@ -268,9 +265,8 @@ export class RoomManager {
 	}
 
 	/**
-	 * 整合性回復処理
-	 * Bot 停止中の退出やイベント通知の取りこぼしはイベント駆動では検知できないため、
-	 * 起動時に Discord の現在の状態と照らして残骸を回収する
+	 * Bot の起動時に、Discord の現在の状態と照らしてルームを片付ける
+	 * Bot の停止中に起きた退出やイベントの変化は、起動時にだけ検知できる
 	 */
 	async reconcile(guild: Guild): Promise<void> {
 		console.log("[RoomManager] Reconciling rooms...");
@@ -278,7 +274,7 @@ export class RoomManager {
 		// oxlint-disable-next-line unicorn/no-useless-spread -- removeRoom が反復中に this.rooms を変更するためスナップショットを取る
 		for (const room of [...this.rooms.values()]) {
 			try {
-				// 連携先イベントが消えている・終了している予約ルームは予約を解除
+				// 連携先のイベントが削除・終了・中止されたルームは予約を解除する
 				if (room.reserved && room.eventId) {
 					const event = await guild.scheduledEvents.fetch(room.eventId).catch(() => null);
 					if (!event || event.isCompleted() || event.isCanceled()) {
@@ -286,7 +282,7 @@ export class RoomManager {
 					}
 				}
 
-				// 空のルームを回収
+				// 誰もいないルームは削除する
 				await this.removeRoom(room);
 			} catch (error) {
 				console.error(`[RoomManager] Failed to reconcile room ${room.id}:`, error);
