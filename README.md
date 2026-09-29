@@ -13,6 +13,7 @@
 ## 必要環境
 
 - Node.js 24以上
+- pnpm（バージョンは`package.json`の`packageManager`で指定）
 - Discordボットトークン
 - 適切な権限を持つDiscordサーバー
 
@@ -28,7 +29,7 @@ cd discord-hare-bot
 2. 依存関係をインストール:
 
 ```bash
-npm install
+pnpm install
 ```
 
 3. 環境変数を設定:
@@ -52,14 +53,14 @@ DISCORD_IGNORE_ROLES=除外するロールID（例: 123456789:管理者,98765432
 ### 開発環境
 
 ```bash
-npm run dev
+pnpm dev
 ```
 
 ### 本番環境
 
 ```bash
-npm run build
-npm start
+pnpm build
+pnpm start
 ```
 
 ## コマンド
