@@ -13,7 +13,7 @@
 ## 必要環境
 
 - Node.js 24以上
-- pnpm（バージョンは`package.json`の`packageManager`で指定）
+- pnpm
 - Discordボットトークン
 - 適切な権限を持つDiscordサーバー
 
