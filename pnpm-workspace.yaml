@@ -1,2 +1,5 @@
+# サプライチェーン攻撃対策として公開から3日（分単位）経過していないバージョンは解決しない
+minimumReleaseAge: 4320
+
 allowBuilds:
   esbuild: false
