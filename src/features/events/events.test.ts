@@ -92,6 +92,120 @@ describe("参加登録", () => {
 
 		expect(bob.canView(room.textChannel)).toBe(false);
 	});
+
+	it("ボイスチャンネルにいる間は、参加登録を取り消しても専用チャットが見えたまま", async () => {
+		const { event, room } = await createEventRoom();
+		const bob = world.addMember("bob");
+		await event.subscribe(bob);
+		await bob.joinVoice(room.voiceChannel);
+
+		await event.unsubscribe(bob);
+
+		expect(bob.canView(room.textChannel)).toBe(true);
+	});
+
+	it("参加登録を取り消すと、ボイスチャンネルに入ったことのあるメンバーにも専用チャットが見えなくなる", async () => {
+		const { event, room } = await createEventRoom();
+		const bob = world.addMember("bob");
+		await event.subscribe(bob);
+		await bob.joinVoice(room.voiceChannel);
+		await bob.leaveVoice();
+
+		await event.unsubscribe(bob);
+
+		expect(bob.canView(room.textChannel)).toBe(false);
+	});
+
+	it("参加登録者が100人を超えても、全員に専用チャットが見える（境界値）", async () => {
+		const event = await world.createScheduledEvent("大会", world.addVoiceChannel("雑談"));
+		const members = Array.from({ length: 101 }, (_, i) => world.addMember(`member${i}`));
+		for (const member of members) await event.subscribe(member);
+
+		await event.moveTo(world.readyChannel);
+
+		const room = world.findRoom("大会");
+		if (!room) throw new Error("イベントのルームが作られていません");
+		expect(members.filter((member) => !member.canView(room.textChannel))).toEqual([]);
+	});
+
+	it("専用チャットの権限の反映中に参加登録を取り消したメンバーには、専用チャットが見えない", async () => {
+		const { event, room } = await createEventRoom();
+		const bob = world.addMember("bob");
+		const release = world.server.hold(
+			apiRequest("PATCH", new RegExp(`^/channels/${room.textChannel.id}$`)),
+		);
+		await event.subscribe(bob);
+
+		await event.unsubscribe(bob);
+		release();
+		await world.settle();
+
+		expect(bob.canView(room.textChannel)).toBe(false);
+	});
+
+	it("専用チャットの権限の反映に失敗したメンバーにも、次に参加登録が変化したときに専用チャットが見える", async () => {
+		const { event, room } = await createEventRoom();
+		const bob = world.addMember("bob");
+		const recover = world.server.fail(
+			apiRequest("PATCH", new RegExp(`^/channels/${room.textChannel.id}$`)),
+		);
+		await event.subscribe(bob);
+		recover();
+
+		await event.subscribe(world.addMember("carol"));
+
+		expect(bob.canView(room.textChannel)).toBe(true);
+	});
+});
+
+describe("イベントのルームへの出入り", () => {
+	it("参加登録していないメンバーは、ボイスチャンネルにいる間だけ専用チャットが見える", async () => {
+		const { room } = await createEventRoom();
+		const bob = world.addMember("bob");
+		await bob.joinVoice(room.voiceChannel);
+		const visibleInVoice = bob.canView(room.textChannel);
+
+		await bob.leaveVoice();
+
+		expect([visibleInVoice, bob.canView(room.textChannel)]).toEqual([true, false]);
+	});
+
+	it("参加登録したメンバーは、ボイスチャンネルから抜けても専用チャットが見えたまま", async () => {
+		const { event, room } = await createEventRoom();
+		const bob = world.addMember("bob");
+		await event.subscribe(bob);
+		await bob.joinVoice(room.voiceChannel);
+
+		await bob.leaveVoice();
+
+		expect(bob.canView(room.textChannel)).toBe(true);
+	});
+});
+
+describe("イベントの終了後のルーム（通常のルームと同等）", () => {
+	it("ボイスチャンネルから抜けた参加登録していないメンバーにも、専用チャットが見えたまま", async () => {
+		const { event, room } = await createEventRoom();
+		const [alice, bob] = [world.addMember("alice"), world.addMember("bob")];
+		await alice.joinVoice(room.voiceChannel);
+		await bob.joinVoice(room.voiceChannel);
+		await event.setStatus(GuildScheduledEventStatus.Completed);
+
+		await bob.leaveVoice();
+
+		expect(bob.canView(room.textChannel)).toBe(true);
+	});
+
+	it("専用チャットを同期すると、ボイスチャンネルにいない参加登録者には専用チャットが見えなくなる", async () => {
+		const { event, room } = await createEventRoom();
+		const [alice, bob] = [world.addMember("alice"), world.addMember("bob")];
+		await event.subscribe(bob);
+		await alice.joinVoice(room.voiceChannel);
+		await event.setStatus(GuildScheduledEventStatus.Completed);
+
+		await alice.run("room sync", room.textChannel);
+
+		expect(bob.canView(room.textChannel)).toBe(false);
+	});
 });
 
 describe("イベントのルームの維持と削除", () => {
@@ -175,6 +289,41 @@ describe("Bot の再起動", () => {
 		await world.restartBot();
 
 		expect(room.exists).toBe(true);
+	});
+
+	it("停止中に参加登録したメンバーには、起動時に専用チャットが見える", async () => {
+		const { event, room } = await createEventRoom();
+		const bob = world.addMember("bob");
+		world.stopBot();
+		world.server.subscribeScheduledEvent(event.id, bob.id, true);
+
+		await world.startBot();
+
+		expect(bob.canView(room.textChannel)).toBe(true);
+	});
+
+	it("停止中に参加登録を取り消したメンバーには、起動時に専用チャットが見えなくなる", async () => {
+		const { event, room } = await createEventRoom();
+		const bob = world.addMember("bob");
+		await event.subscribe(bob);
+		world.stopBot();
+		world.server.subscribeScheduledEvent(event.id, bob.id, false);
+
+		await world.startBot();
+
+		expect(bob.canView(room.textChannel)).toBe(false);
+	});
+
+	it("停止中にボイスチャンネルから抜けた参加登録していないメンバーには、起動時に専用チャットが見えなくなる", async () => {
+		const { room } = await createEventRoom();
+		const bob = world.addMember("bob");
+		await bob.joinVoice(room.voiceChannel);
+		world.stopBot();
+		world.server.setVoiceChannel(bob.id, null);
+
+		await world.startBot();
+
+		expect(bob.canView(room.textChannel)).toBe(false);
 	});
 
 	it("停止中に終了したイベントのルームは、起動時に削除する", async () => {

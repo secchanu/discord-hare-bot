@@ -130,6 +130,30 @@ describe("ルームへの出入り", () => {
 		expect(bob.canView(room.textChannel)).toBe(true);
 	});
 
+	it("ルームのボイスチャンネルから抜けたメンバーにも、専用チャットは見えたまま", async () => {
+		const { room, members } = await world.setupRoom("alice", "bob");
+		const [, bob] = members;
+
+		await bob.leaveVoice();
+
+		expect(bob.canView(room.textChannel)).toBe(true);
+	});
+
+	it("専用チャットの権限の反映に失敗したメンバーにも、ボイスチャンネルに入り直すと専用チャットが見える", async () => {
+		const room = await world.addMember("alice").createRoom();
+		const bob = world.addMember("bob");
+		const recover = world.server.fail(
+			apiRequest("PATCH", new RegExp(`^/channels/${room.textChannel.id}$`)),
+		);
+		await bob.joinVoice(room.voiceChannel);
+		await bob.leaveVoice();
+		recover();
+
+		await bob.joinVoice(room.voiceChannel);
+
+		expect(bob.canView(room.textChannel)).toBe(true);
+	});
+
 	it("ルーム内の別のボイスチャンネルへ移ってもルームは残る", async () => {
 		const { room, members } = await world.setupRoom("alice");
 		const [alice] = members;
@@ -304,6 +328,27 @@ describe("Bot の再起動", () => {
 		for (const member of members) {
 			expect(member.voiceChannelId).toBe(room.additionalVoiceChannels[0].id);
 		}
+	});
+
+	it("再起動後も、ルームのボイスチャンネルから抜けたメンバーには専用チャットが見えたまま", async () => {
+		const { room, members } = await world.setupRoom("alice", "bob");
+		const [, bob] = members;
+		await bob.leaveVoice();
+
+		await world.restartBot();
+
+		expect(bob.canView(room.textChannel)).toBe(true);
+	});
+
+	it("停止中にルームのボイスチャンネルに入ったメンバーには、起動時に専用チャットが見える", async () => {
+		const { room } = await world.setupRoom("alice");
+		const bob = world.addMember("bob");
+		world.stopBot();
+		world.server.setVoiceChannel(bob.id, room.voiceChannel.id);
+
+		await world.startBot();
+
+		expect(bob.canView(room.textChannel)).toBe(true);
 	});
 
 	it("停止中に全員が抜けたルームは、起動時に削除する", async () => {

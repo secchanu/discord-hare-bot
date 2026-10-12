@@ -194,17 +194,27 @@ export class RoomManager {
 		// 入ったルームでは専用チャットを見せる
 		if (newRoomId) {
 			const newRoom = this.rooms.get(newRoomId);
-			if (newRoom) {
-				await newRoom.setTextChannelVisibility(newState.member, true);
-			}
+			if (newRoom) await this.syncViewers(newRoom);
 		}
 
-		// 抜けたルームは、誰もいなければ削除する
+		// 抜けたルームは、誰もいなければ削除し、残るなら専用チャットの閲覧者をそろえる
 		if (oldRoomId) {
 			const oldRoom = this.rooms.get(oldRoomId);
-			if (oldRoom) {
-				await this.removeRoom(oldRoom);
+			if (oldRoom && !(await this.removeRoom(oldRoom))) {
+				await this.syncViewers(oldRoom);
 			}
+		}
+	}
+
+	/**
+	 * 専用チャットの閲覧者をそろえる
+	 * 失敗はログに残し、呼び出し側の処理は続ける
+	 */
+	async syncViewers(room: Room): Promise<void> {
+		try {
+			await room.syncViewers();
+		} catch (error) {
+			console.error(`[RoomManager] Failed to sync viewers of room ${room.id}:`, error);
 		}
 	}
 
@@ -266,7 +276,8 @@ export class RoomManager {
 
 	/**
 	 * Bot の起動時に、Discord の現在の状態と照らしてルームを片付ける
-	 * Bot の停止中に起きた退出やイベントの変化は、起動時にだけ検知できる
+	 * 残るルームは、専用チャットの閲覧者をそろえる
+	 * Bot の停止中に起きた出入りやイベントの変化は、起動時にだけ検知できる
 	 */
 	async reconcile(guild: Guild): Promise<void> {
 		console.log("[RoomManager] Reconciling rooms...");
@@ -283,7 +294,9 @@ export class RoomManager {
 				}
 
 				// 誰もいないルームは削除する
-				await this.removeRoom(room);
+				if (await this.removeRoom(room)) continue;
+
+				await this.syncViewers(room);
 			} catch (error) {
 				console.error(`[RoomManager] Failed to reconcile room ${room.id}:`, error);
 			}

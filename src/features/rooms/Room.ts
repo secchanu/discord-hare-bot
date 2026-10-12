@@ -5,7 +5,7 @@ import {
 	type Guild,
 	type GuildChannelManager,
 	type GuildMember,
-	type GuildMemberResolvable,
+	OverwriteType,
 	PermissionFlagsBits,
 	RESTJSONErrorCodes,
 	type Snowflake,
@@ -14,6 +14,9 @@ import {
 } from "discord.js";
 import { defaultGame, type Game } from "../games/types";
 import type { CreateRoomOptions, RoomData, RoomHooks } from "./types";
+
+// イベントの参加登録者を1回の API 呼び出しで取得できる最大数
+const SUBSCRIBER_PAGE_SIZE = 100;
 
 /**
  * カテゴリー・専用チャット・ボイスチャンネルからなるルーム
@@ -35,6 +38,9 @@ export class Room {
 	private textChannelId?: Snowflake;
 	private _voiceChannelId?: Snowflake;
 	private additionalVoiceChannelIds: Snowflake[] = [];
+
+	// 専用チャットの閲覧者の同期を1つずつ実行するための、最後に要求された同期
+	private viewerSync: Promise<void> = Promise.resolve();
 
 	// 連続したボイスチャンネル名の変更を最新の名前にまとめるための状態
 	private desiredVoiceChannelName?: string;
@@ -282,17 +288,93 @@ export class Room {
 	}
 
 	/**
-	 * 専用チャットをメンバーに見せるか設定する
-	 * @param visible 見せるなら true
+	 * 専用チャットの閲覧者を、ルームの状態から決まる閲覧者にそろえる
+	 * 予約中（イベントが有効な間）のルームの閲覧者は、イベントの参加登録者と今ボイスチャンネルにいるメンバー
+	 * それ以外のルームの閲覧者は、今見えているメンバーと今ボイスチャンネルにいるメンバー
+	 * 閲覧者は同期のたびに Discord から決め直すため、取りこぼした変化も次の同期で反映される
 	 */
-	async setTextChannelVisibility(member: GuildMemberResolvable, visible: boolean): Promise<void> {
+	syncViewers(): Promise<void> {
+		return this.enqueueViewerSync(false);
+	}
+
+	/**
+	 * 専用チャットの閲覧者を、今見えているメンバーを含めずに決め直す
+	 */
+	resetViewers(): Promise<void> {
+		return this.enqueueViewerSync(true);
+	}
+
+	/**
+	 * 同期を、前の同期が終わってから実行する
+	 * 同期は実行時の状態から閲覧者を決めるため、古い状態の反映が新しい状態の反映を上書きしない
+	 */
+	private enqueueViewerSync(reset: boolean): Promise<void> {
+		const sync = this.viewerSync.catch(() => {}).then(() => this.applyViewers(reset));
+		this.viewerSync = sync;
+		return sync;
+	}
+
+	private async applyViewers(reset: boolean): Promise<void> {
 		if (!this.textChannelId) return;
 		const textChannel = this.channelManager.resolve(this.textChannelId);
 		if (!textChannel || textChannel.type !== ChannelType.GuildText) return;
 
-		await textChannel.permissionOverwrites.edit(member, {
-			ViewChannel: visible ? true : null,
-		});
+		const currentViewerIds = new Set(
+			textChannel.permissionOverwrites.cache
+				.filter(
+					(overwrite) =>
+						overwrite.type === OverwriteType.Member &&
+						overwrite.allow.has(PermissionFlagsBits.ViewChannel),
+				)
+				.map((overwrite) => overwrite.id),
+		);
+
+		let baseIds: Iterable<Snowflake> = [];
+		if (this._reserved) baseIds = await this.fetchSubscriberIds();
+		else if (!reset) baseIds = currentViewerIds;
+		const viewerIds = new Set([...baseIds, ...this.members.keys()]);
+
+		if (
+			viewerIds.size === currentViewerIds.size &&
+			[...viewerIds].every((id) => currentViewerIds.has(id))
+		) {
+			return;
+		}
+
+		try {
+			// キャッシュにないユーザーは discord.js が上書きの種類を判別できないため、種類を指定する
+			await textChannel.permissionOverwrites.set([
+				{ id: this._guild.id, type: OverwriteType.Role, deny: [PermissionFlagsBits.ViewChannel] },
+				...[...viewerIds].map((id) => ({
+					id,
+					type: OverwriteType.Member,
+					allow: [PermissionFlagsBits.ViewChannel],
+				})),
+			]);
+		} catch (error) {
+			// 同期中にルームが削除された
+			if (isUnknownChannelError(error)) return;
+			throw error;
+		}
+	}
+
+	/**
+	 * 連携先のイベントの参加登録者をすべて取得する
+	 */
+	private async fetchSubscriberIds(): Promise<Snowflake[]> {
+		if (!this.eventId) return [];
+
+		const ids: Snowflake[] = [];
+		let after: Snowflake | undefined;
+		while (true) {
+			const page = await this._guild.scheduledEvents.fetchSubscribers(this.eventId, {
+				limit: SUBSCRIBER_PAGE_SIZE,
+				after,
+			});
+			ids.push(...page.keys());
+			if (page.size < SUBSCRIBER_PAGE_SIZE) return ids;
+			after = page.lastKey();
+		}
 	}
 
 	/**
@@ -377,30 +459,6 @@ export class Room {
 			this.members.map((member) => this.moveMembers(member.voice, index)),
 		);
 		return results.every(Boolean);
-	}
-
-	/**
-	 * 専用チャットの閲覧権限を、ボイスチャンネルにいるメンバーにそろえる
-	 */
-	async syncTextChannelPermissions(): Promise<void> {
-		if (!this.textChannelId) return;
-		const textChannel = this.channelManager.resolve(this.textChannelId);
-		if (!textChannel || textChannel.type !== ChannelType.GuildText) return;
-
-		const currentMembers = this.members;
-
-		const newOverwrites = [
-			{
-				id: this._guild.id,
-				deny: [PermissionFlagsBits.ViewChannel],
-			},
-			...Array.from(currentMembers.values()).map((member) => ({
-				id: member.id,
-				allow: [PermissionFlagsBits.ViewChannel],
-			})),
-		];
-
-		await textChannel.permissionOverwrites.set(newOverwrites);
 	}
 
 	/**

@@ -5,7 +5,7 @@ import type { GuildCommandInteraction } from "../types";
 
 /**
  * /room sync サブコマンド
- * 専用チャットの閲覧権限を、ルームのボイスチャンネルにいるメンバーにそろえる
+ * 専用チャットの閲覧者を、ルームのボイスチャンネルにいるメンバー（イベントが有効な間は参加登録者も）に絞り直す
  */
 export async function handleSync(
 	interaction: GuildCommandInteraction,
@@ -20,7 +20,7 @@ export async function handleSync(
 	await interaction.reply("専用チャットの権限を同期しています…");
 
 	try {
-		await room.syncTextChannelPermissions();
+		await room.resetViewers();
 		await interaction.editReply("専用チャットを部屋のメンバーに同期しました");
 	} catch (error) {
 		console.error("[room sync] Failed to sync text channel:", error);

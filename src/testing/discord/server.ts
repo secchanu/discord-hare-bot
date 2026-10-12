@@ -2,6 +2,7 @@ import {
 	ChannelType,
 	type Client,
 	DiscordAPIError,
+	GatewayIntentBits,
 	GuildScheduledEventStatus,
 	InteractionResponseType,
 	MessageFlags,
@@ -189,6 +190,13 @@ export class FakeDiscordServer {
 	}
 
 	/**
+	 * Bot がインテントを指定しているか
+	 */
+	private hasIntent(intent: GatewayIntentBits): boolean {
+		return this.client?.options.intents.has(intent) ?? false;
+	}
+
+	/**
 	 * 登録されたコマンドの定義
 	 */
 	command(name: string): Record<string, unknown> | undefined {
@@ -209,7 +217,9 @@ export class FakeDiscordServer {
 	addMember(name: string, roleIds: string[] = [], bot = false): MemberState {
 		const member = { id: this.nextId(), name, bot, roleIds };
 		this.members.set(member.id, member);
-		this.dispatch("GUILD_MEMBER_ADD", { guild_id: this.guildId, ...this.rawMember(member.id) });
+		if (this.hasIntent(GatewayIntentBits.GuildMembers)) {
+			this.dispatch("GUILD_MEMBER_ADD", { guild_id: this.guildId, ...this.rawMember(member.id) });
+		}
 		return member;
 	}
 
@@ -471,10 +481,16 @@ export class FakeDiscordServer {
 		}
 		if (method === "GET" && (params = route(/^\/guilds\/(\d+)\/scheduled-events\/(\d+)\/users$/))) {
 			const event = this.requireScheduledEvent(params[1], request);
-			return event.subscriberIds.map((id) => ({
-				guild_scheduled_event_id: event.id,
-				user: this.rawUser(id),
-			}));
+			const limit = Math.min(Number(request.query?.get("limit") ?? 100), 100);
+			const after = BigInt(request.query?.get("after") ?? 0);
+			return event.subscriberIds
+				.filter((id) => BigInt(id) > after)
+				.sort((a, b) => (BigInt(a) < BigInt(b) ? -1 : 1))
+				.slice(0, limit)
+				.map((id) => ({
+					guild_scheduled_event_id: event.id,
+					user: this.rawUser(id),
+				}));
 		}
 		if (method === "PUT" && route(/^\/applications\/(\d+)\/guilds\/(\d+)\/commands$/)) {
 			this.registeredCommands = (request.body as Record<string, unknown>[]).map((command) => ({
@@ -850,7 +866,15 @@ export class FakeDiscordServer {
 			premium_tier: 0,
 			roles: [...this.roles.values()].map((role) => this.rawRole(role)),
 			channels: [...this.channels.values()].map((channel) => this.rawChannel(channel)),
-			members: [...this.members.keys()].map((id) => this.rawMember(id)),
+			// GuildPresences インテントがない Bot には、Bot 自身とボイスチャンネルにいるメンバーだけが届く
+			members: [...this.members.keys()]
+				.filter(
+					(id) =>
+						this.hasIntent(GatewayIntentBits.GuildPresences) ||
+						id === this.botUserId ||
+						this.voice.has(id),
+				)
+				.map((id) => this.rawMember(id)),
 			voice_states: [...this.voice.keys()].map((id) => this.rawVoiceState(id)),
 			guild_scheduled_events: [...this.scheduledEvents.values()].map((event) =>
 				this.rawScheduledEvent(event),

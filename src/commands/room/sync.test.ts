@@ -38,8 +38,22 @@ describe("専用チャットの同期", () => {
 		expect(world.addMember("dave").canView(room.textChannel)).toBe(false);
 	});
 
+	it("イベントのルームでは、参加登録したメンバーにも専用チャットが見えたまま", async () => {
+		const event = await world.createScheduledEvent("大会", world.readyChannel);
+		const room = world.findRoom("大会");
+		if (!room) throw new Error("イベントのルームが作られていません");
+		const [alice, bob] = [world.addMember("alice"), world.addMember("bob")];
+		await alice.joinVoice(room.voiceChannel);
+		await event.subscribe(bob);
+
+		await alice.run("room sync", room.textChannel);
+
+		expect(bob.canView(room.textChannel)).toBe(true);
+	});
+
 	it("同期に失敗した場合は、全員に見える応答を取り下げて実行者にだけ伝える", async () => {
-		const { room, members } = await world.setupRoom("alice");
+		const { room, members } = await world.setupRoom("alice", "bob");
+		await members[1].leaveVoice();
 		world.server.fail(apiRequest("PATCH", new RegExp(`^/channels/${room.textChannel.id}$`)));
 
 		const run = await members[0].run("room sync", room.textChannel);

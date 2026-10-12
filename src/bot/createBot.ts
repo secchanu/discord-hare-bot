@@ -9,6 +9,7 @@ import { RoomStore } from "../features/rooms/RoomStore";
 import type { BotConfig } from "./config";
 import type { AppContext } from "./context";
 import { intents } from "./intents";
+import { partials } from "./partials";
 
 /**
  * 永続化に使うデータベース
@@ -37,7 +38,7 @@ export function createBot(
 		eventRoomManager,
 	};
 
-	const client = new Client({ intents });
+	const client = new Client({ intents, partials });
 	registerEventHandlers(client, ctx);
 
 	return { client, ctx };

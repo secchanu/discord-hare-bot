@@ -1,4 +1,4 @@
-import type { GuildScheduledEvent, PartialGuildScheduledEvent, User } from "discord.js";
+import type { GuildScheduledEvent, PartialGuildScheduledEvent } from "discord.js";
 import type { BotConfig } from "../../bot/config";
 import type { RoomManager } from "../rooms/RoomManager";
 
@@ -34,13 +34,12 @@ export class EventRoomManager {
 			if (voiceChannel) {
 				await event.edit({ channel: voiceChannel });
 			}
-
-			// 参加登録済みのユーザーに専用チャットを見せる
-			const subscribers = await event.fetchSubscribers();
-			await Promise.all(subscribers.map((sub) => room.setTextChannelVisibility(sub.user, true)));
 		} catch (error) {
 			console.error("[EventRoomManager] Failed to create event room:", error);
 		}
+
+		// 参加登録者に専用チャットを見せる
+		await this.syncEventRoomViewers(event);
 	}
 
 	/**
@@ -89,28 +88,12 @@ export class EventRoomManager {
 	}
 
 	/**
-	 * 参加登録したユーザーに専用チャットを見せる
+	 * イベントのルームの専用チャットの閲覧者をそろえる
 	 */
-	async addUserToEventRoom(
+	async syncEventRoomViewers(
 		event: GuildScheduledEvent | PartialGuildScheduledEvent,
-		user: User,
 	): Promise<void> {
 		const room = this.roomManager.findByEventId(event.id);
-		if (!room) return;
-
-		await room.setTextChannelVisibility(user, true);
-	}
-
-	/**
-	 * 参加登録を取り消したユーザーから専用チャットを隠す
-	 */
-	async removeUserFromEventRoom(
-		event: GuildScheduledEvent | PartialGuildScheduledEvent,
-		user: User,
-	): Promise<void> {
-		const room = this.roomManager.findByEventId(event.id);
-		if (!room) return;
-
-		await room.setTextChannelVisibility(user, false);
+		if (room) await this.roomManager.syncViewers(room);
 	}
 }
