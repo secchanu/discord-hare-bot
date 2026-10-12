@@ -33,7 +33,7 @@ describe("専用チャットの同期", () => {
 
 		const run = await alice.run("room sync", room.textChannel);
 
-		expect(run.publicMessages).toEqual(["専用チャットを部屋のメンバーに同期しました"]);
+		expect(run.publicMessages).toEqual(["専用チャットをルームのメンバーに同期しました"]);
 		expect(members.map((member) => member.canView(room.textChannel))).toEqual([true, false, true]);
 		expect(world.addMember("dave").canView(room.textChannel)).toBe(false);
 	});

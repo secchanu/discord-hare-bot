@@ -33,7 +33,7 @@ export async function handleData(
 	if (!Object.keys(gameData).length) {
 		await replyError(
 			interaction,
-			`抽選できるデータがありません\n部屋のゲームを確認してください\n現在のゲームは「${game.name}」です`,
+			`抽選できるデータがありません\nルームのゲームを確認してください\n現在のゲームは「${game.name}」です`,
 		);
 		return;
 	}

@@ -21,7 +21,7 @@ export async function handleSync(
 
 	try {
 		await room.resetViewers();
-		await interaction.editReply("専用チャットを部屋のメンバーに同期しました");
+		await interaction.editReply("専用チャットをルームのメンバーに同期しました");
 	} catch (error) {
 		console.error("[room sync] Failed to sync text channel:", error);
 		await replyError(interaction, "同期中にエラーが発生しました");

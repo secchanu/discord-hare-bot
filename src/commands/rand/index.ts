@@ -14,7 +14,7 @@ export const randCommand: CommandHandler = {
 		.addSubcommand((subcommand) =>
 			subcommand
 				.setName("member")
-				.setDescription("部屋のメンバーから")
+				.setDescription("ルームのメンバーから")
 				.addIntegerOption((option) =>
 					option.setName("number").setDescription("選択数 (指定無しの場合1人)").setMinValue(1),
 				),

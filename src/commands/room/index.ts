@@ -12,7 +12,7 @@ import { handleVc } from "./vc";
 export const roomCommand: CommandHandler = {
 	data: new SlashCommandBuilder()
 		.setName("room")
-		.setDescription("部屋の設定")
+		.setDescription("ルームの設定")
 		.addSubcommand((subcommand) => subcommand.setName("sync").setDescription("専用チャットの同期"))
 		.addSubcommand((subcommand) =>
 			subcommand

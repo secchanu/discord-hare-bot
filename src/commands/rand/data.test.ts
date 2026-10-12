@@ -53,7 +53,7 @@ describe("実行条件", () => {
 
 		expect(run.publicMessages).toEqual([]);
 		expect(run.privateMessages).toEqual([
-			"抽選できるデータがありません\n部屋のゲームを確認してください\n現在のゲームは「APEX」です",
+			"抽選できるデータがありません\nルームのゲームを確認してください\n現在のゲームは「APEX」です",
 		]);
 	});
 });

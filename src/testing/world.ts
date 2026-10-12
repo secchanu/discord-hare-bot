@@ -61,7 +61,7 @@ export class World {
 		});
 		this.readyChannel = this.server.addChannel({
 			type: ChannelType.GuildVoice,
-			name: "部屋生成",
+			name: "ルーム生成",
 			parentId: readyCategory.id,
 		});
 		this.wantedChannel = this.server.addChannel({ type: ChannelType.GuildText, name: "募集" });

@@ -311,7 +311,7 @@ describe("募集によるゲームの切り替え", () => {
 		const run = await alice.run("rand data", room.textChannel);
 
 		expect(run.privateMessages).toEqual([
-			"抽選できるデータがありません\n部屋のゲームを確認してください\n現在のゲームは「APEX」です",
+			"抽選できるデータがありません\nルームのゲームを確認してください\n現在のゲームは「APEX」です",
 		]);
 	});
 });
