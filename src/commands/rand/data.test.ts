@@ -21,7 +21,7 @@ async function setupGameRoom(data: Record<string, string[]>) {
 	const alice = world.addMember("alice", { roles: [apex] });
 	const room = await alice.createRoom();
 	await alice.run("room game", room.textChannel, { game: apex });
-	await world.saveGameData(apex, data);
+	world.saveGameData(apex, data);
 	return { apex, alice, room };
 }
 

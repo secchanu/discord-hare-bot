@@ -16,14 +16,14 @@ export class GameStore {
 	/**
 	 * ゲームを保存する
 	 */
-	async set(roleId: Snowflake, game: Game): Promise<void> {
+	set(roleId: Snowflake, game: Game): void {
 		this.store.set(roleId, game);
 	}
 
 	/**
 	 * ゲームを取得する
 	 */
-	async get(roleId: Snowflake): Promise<Game | undefined> {
+	get(roleId: Snowflake): Game | undefined {
 		return this.store.get(roleId);
 	}
 }

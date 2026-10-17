@@ -38,9 +38,7 @@ export async function handleData(
 	const roleId = role.id;
 	const gameManager = ctx.gameManager;
 
-	await interaction.deferReply();
-
-	const game = (await gameManager.getGame(roleId)) ?? (await gameManager.createGame(role));
+	const game = gameManager.getGame(roleId) ?? gameManager.createGame(role);
 
 	const gameName = game.name;
 	const gameData = game.data;
@@ -58,10 +56,11 @@ export async function handleData(
 
 	const selectRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu);
 
-	const message = await interaction.editReply({
+	await interaction.reply({
 		content: `${gameName}: 編集するデータを選択してください`,
 		components: [selectRow],
 	});
+	const message = await interaction.fetchReply();
 
 	/**
 	 * モーダルの入力内容でゲームデータを更新し、結果を表示する
@@ -86,7 +85,7 @@ export async function handleData(
 		}
 
 		if (!newData.length) {
-			await gameManager.updateGameData(roleId, newKey, null);
+			gameManager.updateGameData(roleId, newKey, null);
 			await modalInteraction.editReply({
 				content: `${gameName}: 「${newKey}」のデータを削除しました`,
 				components: [],
@@ -96,7 +95,7 @@ export async function handleData(
 
 		const update = inlineCode(newData.join(", "));
 		if (!exists) {
-			await gameManager.updateGameData(roleId, newKey, newData);
+			gameManager.updateGameData(roleId, newKey, newData);
 			await modalInteraction.editReply({
 				content: `${gameName}: 「${newKey}」のデータを作成しました\n${update}`,
 				components: [],
@@ -105,8 +104,8 @@ export async function handleData(
 		}
 
 		// データ名の変更に対応するため、古いデータ名を削除してから保存する
-		await gameManager.updateGameData(roleId, dataKey, null);
-		await gameManager.updateGameData(roleId, newKey, newData);
+		gameManager.updateGameData(roleId, dataKey, null);
+		gameManager.updateGameData(roleId, newKey, newData);
 		const content =
 			dataKey === newKey
 				? `${gameName}: 「${newKey}」のデータを更新しました\n${update}`

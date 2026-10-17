@@ -9,10 +9,7 @@ export function getRoomFromVoiceChannel(
 	interaction: GuildCommandInteraction,
 	roomManager: RoomManager,
 ): Room | null {
-	const parentId = interaction.member.voice.channel?.parentId;
-	if (!parentId) return null;
-
-	return roomManager.get(parentId) ?? null;
+	return roomManager.getByChannel(interaction.member.voice.channel);
 }
 
 /**
@@ -35,8 +32,5 @@ export function getRoomFromTextChannel(
 	interaction: GuildCommandInteraction,
 	roomManager: RoomManager,
 ): Room | null {
-	const parentId = interaction.channel?.parentId;
-	if (!parentId) return null;
-
-	return roomManager.get(parentId) ?? null;
+	return roomManager.getByChannel(interaction.channel);
 }

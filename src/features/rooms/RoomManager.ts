@@ -11,7 +11,7 @@ import type { GameManager } from "../games/GameManager";
 import type { Game } from "../games/types";
 import { Room } from "./Room";
 import type { RoomStore } from "./RoomStore";
-import type { RoomHooks } from "./types";
+import type { RoomHooks, RoomManagerHooks } from "./types";
 
 // 初期ゲームの判定で遡る募集メッセージの数
 const WANTED_LOOKUP_LIMIT = 50;
@@ -21,17 +21,18 @@ const WANTED_LOOKUP_LIMIT = 50;
  */
 export class RoomManager {
 	private rooms = new Collection<Snowflake, Room>();
-	private readonly hooks: RoomHooks;
+	private readonly roomHooks: RoomHooks;
 
 	constructor(
 		private store: RoomStore,
 		private gameManager: GameManager,
 		private config: BotConfig,
+		private hooks: RoomManagerHooks = {},
 	) {
-		this.hooks = {
-			persist: async (room) => {
+		this.roomHooks = {
+			persist: (room) => {
 				if (!room.id) return;
-				await this.store.set(room.id, room.toData());
+				this.store.set(room.id, room.toData());
 			},
 		};
 	}
@@ -41,6 +42,14 @@ export class RoomManager {
 	 */
 	get(roomId: Snowflake): Room | undefined {
 		return this.rooms.get(roomId);
+	}
+
+	/**
+	 * チャンネルが属するルームを返す
+	 */
+	getByChannel(channel: { parentId: Snowflake | null } | null | undefined): Room | null {
+		if (!channel?.parentId) return null;
+		return this.rooms.get(channel.parentId) ?? null;
 	}
 
 	/**
@@ -77,7 +86,7 @@ export class RoomManager {
 					ownerId: owner.id,
 					game,
 				},
-				this.hooks,
+				this.roomHooks,
 			);
 
 			const roomId = await room.create(position);
@@ -104,7 +113,7 @@ export class RoomManager {
 				reserved: true,
 				eventId: options.eventId,
 			},
-			this.hooks,
+			this.roomHooks,
 		);
 
 		const roomId = await room.create(options.position);
@@ -118,7 +127,7 @@ export class RoomManager {
 	 * ロールを検証し、ロールのゲームを解決する（未登録なら作成する）
 	 * @returns 設定されたゲーム。無効なロールの場合は null
 	 */
-	async changeGame(room: Room, roleId: Snowflake): Promise<Game | null> {
+	changeGame(room: Room, roleId: Snowflake): Game | null {
 		const guild = room.guild;
 
 		// @everyone はデフォルトゲームを表す
@@ -128,18 +137,18 @@ export class RoomManager {
 
 		if (room.game.id === roleId) return room.game;
 
-		const game = await this.resolveGameForRole(guild, roleId);
+		const game = this.resolveGameForRole(guild, roleId);
 		if (!game) return null;
 
-		await room.setGame(game);
+		room.setGame(game);
 		return game;
 	}
 
 	/**
 	 * ロールのゲームを解決する（未登録ならロールから作成する）
 	 */
-	private async resolveGameForRole(guild: Guild, roleId: Snowflake): Promise<Game | null> {
-		const game = await this.gameManager.getGame(roleId);
+	private resolveGameForRole(guild: Guild, roleId: Snowflake): Game | null {
+		const game = this.gameManager.getGame(roleId);
 		if (game) return game;
 
 		const role = guild.roles.resolve(roleId);
@@ -147,7 +156,7 @@ export class RoomManager {
 			return null;
 		}
 
-		return await this.gameManager.createGame(role);
+		return this.gameManager.createGame(role);
 	}
 
 	/**
@@ -174,7 +183,7 @@ export class RoomManager {
 			const role = lastMessage.mentions.roles.first();
 			if (!role || !owner.roles.resolve(role.id)) return fallback;
 
-			return (await this.resolveGameForRole(guild, role.id)) ?? fallback;
+			return this.resolveGameForRole(guild, role.id) ?? fallback;
 		} catch (error) {
 			console.error("[RoomManager] Failed to resolve initial game:", error);
 			return fallback;
@@ -185,24 +194,18 @@ export class RoomManager {
 	 * メンバーのルーム間の移動を処理する
 	 */
 	async handleMemberMove(oldState: VoiceState, newState: VoiceState): Promise<void> {
-		const oldRoomId = oldState.channel?.parentId;
-		const newRoomId = newState.channel?.parentId;
+		const oldRoom = this.getByChannel(oldState.channel);
+		const newRoom = this.getByChannel(newState.channel);
 
-		if (oldRoomId === newRoomId) return;
+		if (oldRoom === newRoom) return;
 		if (!newState.member) return;
 
 		// 入ったルームでは専用チャットを見せる
-		if (newRoomId) {
-			const newRoom = this.rooms.get(newRoomId);
-			if (newRoom) await this.syncViewers(newRoom);
-		}
+		if (newRoom) await this.syncViewers(newRoom);
 
 		// 抜けたルームは、誰もいなければ削除し、残るなら専用チャットの閲覧者をそろえる
-		if (oldRoomId) {
-			const oldRoom = this.rooms.get(oldRoomId);
-			if (oldRoom && !(await this.removeRoom(oldRoom))) {
-				await this.syncViewers(oldRoom);
-			}
+		if (oldRoom && !(await this.removeRoom(oldRoom))) {
+			await this.syncViewers(oldRoom);
 		}
 	}
 
@@ -228,10 +231,22 @@ export class RoomManager {
 
 		if (deleted && roomId) {
 			this.rooms.delete(roomId);
-			await this.store.delete(roomId);
+			this.deleteRoomData(roomId);
 		}
 
 		return deleted;
+	}
+
+	/**
+	 * ルームの保存データを削除し、付随するデータの片付けを知らせる
+	 */
+	private deleteRoomData(roomId: Snowflake): void {
+		this.store.delete(roomId);
+		try {
+			this.hooks.removed?.(roomId);
+		} catch (error) {
+			console.error(`[RoomManager] Failed to clean up data of room ${roomId}:`, error);
+		}
 	}
 
 	/**
@@ -240,7 +255,7 @@ export class RoomManager {
 	async recoverRooms(guild: Guild): Promise<void> {
 		console.log("[RoomManager] Recovering guild rooms...");
 
-		const roomDataList = await this.store.getAll();
+		const roomDataList = this.store.getAll();
 		let recoveredCount = 0;
 		let failedCount = 0;
 
@@ -255,9 +270,8 @@ export class RoomManager {
 					throw new Error(`Category ${roomData.channels.categoryId} not found`);
 				}
 
-				const game =
-					(await this.gameManager.getGame(roomData.gameId)) ?? this.gameManager.getDefaultGame();
-				const room = Room.fromData(guild, roomData, game, this.hooks);
+				const game = this.gameManager.getGame(roomData.gameId) ?? this.gameManager.getDefaultGame();
+				const room = Room.fromData(guild, roomData, game, this.roomHooks);
 
 				this.rooms.set(roomData.id, room);
 				recoveredCount++;
@@ -265,7 +279,7 @@ export class RoomManager {
 				console.error(`[RoomManager] Failed to recover room ${roomData.id}:`, error);
 				failedCount++;
 				// 復旧できないルームは保存データから消す
-				await this.store.delete(roomData.id);
+				this.deleteRoomData(roomData.id);
 			}
 		}
 

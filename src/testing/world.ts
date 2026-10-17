@@ -12,6 +12,8 @@ import { vi } from "vitest";
 import type { BotConfig } from "../bot/config";
 import type { AppContext } from "../bot/context";
 import { createBot } from "../bot/createBot";
+import type { CreateMessage } from "../features/assistant/Claude";
+import { ConversationStore } from "../features/assistant/ConversationStore";
 import { GameStore } from "../features/games/GameStore";
 import { RoomStore } from "../features/rooms/RoomStore";
 import type { RoomData } from "../features/rooms/types";
@@ -33,9 +35,12 @@ const START_TIME = new Date("2026-09-27T12:00:00+09:00");
  * Bot と偽の Discord サーバーからなるテスト環境を作る
  * タイマーと日時は偽物に切り替わり、world.advance() でだけ進む
  */
-export async function createWorld(): Promise<World> {
-	vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"], now: START_TIME });
-	const world = new World();
+export async function createWorld(options: { claude?: CreateMessage } = {}): Promise<World> {
+	vi.useFakeTimers({
+		toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"],
+		now: START_TIME,
+	});
+	const world = new World(options.claude);
 	await world.startBot();
 	return world;
 }
@@ -50,10 +55,14 @@ export class World {
 	readonly wantedChannel: ChannelState;
 	readonly generalChannel: ChannelState;
 
-	private databases = { games: new DatabaseSync(":memory:"), rooms: new DatabaseSync(":memory:") };
+	private databases = {
+		games: new DatabaseSync(":memory:"),
+		rooms: new DatabaseSync(":memory:"),
+		conversations: new DatabaseSync(":memory:"),
+	};
 	private bot: { client: Client; ctx: AppContext } | null = null;
 
-	constructor() {
+	constructor(private claude?: CreateMessage) {
 		this.ignoredRole = this.server.addRole("管理者");
 		const readyCategory = this.server.addChannel({
 			type: ChannelType.GuildCategory,
@@ -82,6 +91,7 @@ export class World {
 			readyChannelId: this.readyChannel.id,
 			wantedChannelId: this.wantedChannel.id,
 			ignoreRoleIds: [this.ignoredRole.id],
+			assistant: this.claude && { anthropicApiKey: "key", model: "test-model" },
 		};
 	}
 
@@ -89,7 +99,9 @@ export class World {
 	 * Bot を起動し、起動処理（コマンドの登録、ルームの復旧と片付け）が終わるまで待つ
 	 */
 	async startBot(): Promise<void> {
-		const bot = createBot(this.config, this.databases);
+		const bot = createBot(this.config, (name) => this.databases[name], {
+			createMessage: this.claude,
+		});
 		this.bot = bot;
 		this.server.connect(bot.client);
 		bot.client.emit(Events.ClientReady, bot.client as Client<true>);
@@ -125,21 +137,28 @@ export class World {
 	/**
 	 * ロールのゲームにデータを保存する
 	 */
-	async saveGameData(role: RoleState, data: Record<string, string[]>): Promise<void> {
-		await new GameStore(this.databases.games).set(role.id, { id: role.id, name: role.name, data });
+	saveGameData(role: RoleState, data: Record<string, string[]>): void {
+		new GameStore(this.databases.games).set(role.id, { id: role.id, name: role.name, data });
 	}
 
 	/**
 	 * 保存されているロールのゲームのデータ
 	 */
-	async savedGameData(role: RoleState): Promise<Record<string, string[]> | undefined> {
-		return (await new GameStore(this.databases.games).get(role.id))?.data;
+	savedGameData(role: RoleState): Record<string, string[]> | undefined {
+		return new GameStore(this.databases.games).get(role.id)?.data;
+	}
+
+	/**
+	 * 保存されているルームの会話
+	 */
+	savedConversation(roomId: string) {
+		return new ConversationStore(this.databases.conversations).get(roomId);
 	}
 
 	/**
 	 * 保存されているルームのデータ
 	 */
-	savedRooms(): Promise<RoomData[]> {
+	savedRooms(): RoomData[] {
 		return this.roomStore().getAll();
 	}
 
@@ -218,6 +237,18 @@ export class World {
 		const message = this.server.messages.get(messageId);
 		return message ? new MessageView(message) : undefined;
 	}
+
+	/**
+	 * Bot がチャンネルに投稿したメッセージ（投稿順）
+	 */
+	botMessages(channel: ChannelState): MessageView[] {
+		return [...this.server.messages.values()]
+			.filter(
+				(message) => message.channelId === channel.id && message.authorId === this.server.botUserId,
+			)
+			.sort((a, b) => (BigInt(a.id) < BigInt(b.id) ? -1 : 1))
+			.map((message) => new MessageView(message));
+	}
 }
 
 /**
@@ -272,15 +303,34 @@ export class Member {
 		return room;
 	}
 
+	/**
+	 * チャンネルに投稿する
+	 * mentionBot を true にすると、本文の前に Bot へのメンションが付く
+	 * notifyRepliedUser を false にすると、返信先の投稿者に通知しない
+	 */
 	async post(
 		channel: ChannelState,
-		options: { mentions?: RoleState[]; mentionEveryone?: boolean } = {},
-	): Promise<void> {
-		this.world.server.postMessage(this.id, channel.id, {
+		options: {
+			content?: string;
+			mentions?: RoleState[];
+			mentionEveryone?: boolean;
+			mentionBot?: boolean;
+			replyTo?: MessageView;
+			notifyRepliedUser?: boolean;
+		} = {},
+	): Promise<MessageView> {
+		const botId = this.world.server.botUserId;
+		const content = options.content ?? "";
+		const message = this.world.server.postMessage(this.id, channel.id, {
+			content: options.mentionBot ? `<@${botId}> ${content}` : content,
 			mentionRoleIds: (options.mentions ?? []).map((role) => role.id),
 			mentionEveryone: options.mentionEveryone ?? false,
+			mentionUserIds: options.mentionBot ? [botId] : [],
+			replyToId: options.replyTo?.id,
+			notifyRepliedUser: options.notifyRepliedUser,
 		});
 		await this.world.settle();
+		return new MessageView(message);
 	}
 
 	/**
@@ -499,6 +549,20 @@ export class MessageView {
 
 	get content(): string {
 		return this.state.content;
+	}
+
+	/** 返信先のメッセージのID */
+	get replyToId(): string | null {
+		return this.state.referenceId;
+	}
+
+	/** 通知する相手（@everyone、ロール、ユーザー） */
+	get notified(): { everyone: boolean; roleIds: string[]; userIds: string[] } {
+		return {
+			everyone: this.state.mentionEveryone,
+			roleIds: this.state.mentionRoleIds,
+			userIds: this.state.mentionUserIds,
+		};
 	}
 
 	/** 表示されているボタンのカスタムID */

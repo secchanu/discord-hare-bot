@@ -9,7 +9,18 @@ interface BotConfig {
 	readyChannelId: string;
 	wantedChannelId: string;
 	ignoreRoleIds: string[];
+	// ゲームの質問に答える機能の設定
+	// Claude API のキーがあるときだけ使う
+	assistant?: AssistantConfig;
 }
+
+interface AssistantConfig {
+	anthropicApiKey: string;
+	model: string;
+}
+
+// 質問に答えるモデルの既定値
+const DEFAULT_ASSISTANT_MODEL = "claude-opus-5-5";
 
 /**
  * 除外ロールの環境変数からロールIDを取り出す
@@ -34,6 +45,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BotConfig {
 		readyChannelId: env.DISCORD_READY_CHANNEL_ID || "",
 		wantedChannelId: env.DISCORD_WANTED_CHANNEL_ID || "",
 		ignoreRoleIds: parseIgnoreRoleIds(env.DISCORD_IGNORE_ROLES),
+		assistant: env.ANTHROPIC_API_KEY
+			? {
+					anthropicApiKey: env.ANTHROPIC_API_KEY,
+					model: env.ASSISTANT_MODEL || DEFAULT_ASSISTANT_MODEL,
+				}
+			: undefined,
 	};
 }
 

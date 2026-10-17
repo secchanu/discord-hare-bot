@@ -18,10 +18,7 @@ async function main(): Promise<void> {
 		process.exit(EXIT_CODE.ERROR);
 	}
 
-	const { client } = createBot(config, {
-		games: openDatabase("games.sqlite"),
-		rooms: openDatabase("rooms.sqlite"),
-	});
+	const { client } = createBot(config, (name) => openDatabase(`${name}.sqlite`));
 	console.log("Event handlers registered");
 
 	try {

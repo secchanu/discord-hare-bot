@@ -27,14 +27,11 @@ export async function handleGame(
 		return;
 	}
 
-	// ゲームの変更は保存を伴い、最初の応答の期限（3秒）を超え得るため、先に応答を保留する
-	await interaction.deferReply();
-
-	const setGame = await ctx.roomManager.changeGame(room, role.id);
+	const setGame = ctx.roomManager.changeGame(room, role.id);
 	if (!setGame) {
 		await replyError(interaction, INVALID_GAME_ROLE_MESSAGE);
 		return;
 	}
 
-	await interaction.editReply(`ゲームを「${setGame.name}」に変更しました`);
+	await interaction.reply(`ゲームを「${setGame.name}」に変更しました`);
 }

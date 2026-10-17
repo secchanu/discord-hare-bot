@@ -35,6 +35,17 @@ export interface CreateRoomOptions {
 }
 
 /**
+ * RoomManager から外部へ委譲する処理
+ */
+export interface RoomManagerHooks {
+	/**
+	 * ルームに付随するデータを片付ける
+	 * ルームの保存データを削除したときに呼ぶ（ルームを削除したときと、起動時に復旧できなかったとき）
+	 */
+	removed?: (roomId: Snowflake) => void;
+}
+
+/**
  * Room から外部へ委譲する処理
  */
 export interface RoomHooks {
@@ -42,5 +53,5 @@ export interface RoomHooks {
 	 * ルームの状態を永続化する
 	 * Room の状態を変更するメソッドが、変更のたびに呼ぶ
 	 */
-	persist: (room: Room) => Promise<void>;
+	persist: (room: Room) => void;
 }

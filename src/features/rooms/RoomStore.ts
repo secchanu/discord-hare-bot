@@ -16,21 +16,21 @@ export class RoomStore {
 	/**
 	 * ルームを保存する
 	 */
-	async set(roomId: Snowflake, data: RoomData): Promise<void> {
+	set(roomId: Snowflake, data: RoomData): void {
 		this.store.set(roomId, data);
 	}
 
 	/**
 	 * すべてのルームを取得する
 	 */
-	async getAll(): Promise<RoomData[]> {
+	getAll(): RoomData[] {
 		return this.store.getAll();
 	}
 
 	/**
 	 * ルームを削除する
 	 */
-	async delete(roomId: Snowflake): Promise<void> {
+	delete(roomId: Snowflake): void {
 		this.store.delete(roomId);
 	}
 }

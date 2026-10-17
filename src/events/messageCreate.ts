@@ -3,13 +3,23 @@ import { Events } from "discord.js";
 import type { AppContext } from "../bot/context";
 
 /**
- * 募集チャンネルへの投稿時に、投稿者が参加しているルームのゲームをメンションしたロールに切り替える
+ * ルームで Bot に聞かれたら、ゲームの質問に答える
+ * 募集チャンネルに投稿されたら、投稿者が参加しているルームのゲームを、メンションしたロールのゲームに切り替える
  */
 export const setupMessageCreateHandler = (client: Client, ctx: AppContext): void => {
 	client.on(Events.MessageCreate, async (message: Message) => {
 		try {
 			if (!message.inGuild()) return;
 			if (message.author.bot) return;
+
+			if (ctx.assistant) {
+				const room = ctx.roomManager.getByChannel(message.channel);
+				if (room) {
+					await ctx.assistant.respond(message, room);
+					return;
+				}
+			}
+
 			if (message.channelId !== ctx.config.wantedChannelId) return;
 			if (!message.mentions.everyone && message.mentions.roles.size === 0) return;
 
@@ -23,9 +33,9 @@ export const setupMessageCreateHandler = (client: Client, ctx: AppContext): void
 			const member = message.member ?? (await message.guild.members.fetch(message.author.id));
 			if (!member.roles.resolve(roleId)) return;
 
-			await ctx.roomManager.changeGame(room, roleId);
+			ctx.roomManager.changeGame(room, roleId);
 		} catch (error) {
-			console.error("[MessageCreate] Failed to handle wanted message:", error);
+			console.error("[MessageCreate] Failed to handle message:", error);
 		}
 	});
 };

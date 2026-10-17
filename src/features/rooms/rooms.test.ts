@@ -206,7 +206,7 @@ describe("ルームへの出入り", () => {
 		await world.settle();
 
 		expect(room.exists).toBe(false);
-		expect(await world.savedRooms()).toEqual([]);
+		expect(world.savedRooms()).toEqual([]);
 	});
 });
 
@@ -359,7 +359,7 @@ describe("Bot の再起動", () => {
 		await world.startBot();
 
 		expect(room.exists).toBe(false);
-		expect(await world.savedRooms()).toEqual([]);
+		expect(world.savedRooms()).toEqual([]);
 	});
 
 	it("起動時にメンバーがいるルームは残す", async () => {
@@ -377,7 +377,7 @@ describe("Bot の再起動", () => {
 
 		await world.startBot();
 
-		expect(await world.savedRooms()).toEqual([]);
+		expect(world.savedRooms()).toEqual([]);
 	});
 
 	it("復元できないルームがあっても、他のルームは復元する", async () => {
@@ -423,12 +423,12 @@ describe("Bot の再起動", () => {
 	it("別のサーバーのルームは、起動時に保存データから消す", async () => {
 		const { room } = await world.setupRoom("alice");
 		world.stopBot();
-		const [saved] = await world.savedRooms();
-		await world.roomStore().set(saved.id, { ...saved, guildId: "other-guild" });
+		const [saved] = world.savedRooms();
+		world.roomStore().set(saved.id, { ...saved, guildId: "other-guild" });
 
 		await world.startBot();
 
-		expect(await world.savedRooms()).toEqual([]);
+		expect(world.savedRooms()).toEqual([]);
 		expect(room.exists).toBe(true);
 	});
 });

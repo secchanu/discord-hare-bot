@@ -8,7 +8,8 @@
 - 🎯 **チーム分け**: `/team`コマンドでメンバーをチーム分け
 - 🎲 **ランダム選択**: `/rand`コマンドでメンバーやゲームデータをランダム選択
 - 📅 **イベント連携**: Discordのスケジュールイベントと連携
-- 💾 **永続化**: SQLiteによるデータ保存でボット再起動後も復元
+- 💬 **ゲームの質問**: ルームでメンションすると、ルームのゲームについての質問に答える
+- 💾 **永続化**: ボット再起動後も復元
 
 ## 必要環境
 
@@ -46,6 +47,17 @@ DISCORD_READY_CHANNEL_ID=ルーム作成用VC ID
 DISCORD_WANTED_CHANNEL_ID=ゲーム募集用チャンネル ID
 DISCORD_IGNORE_ROLES=除外するロールID（例: 123456789:管理者,987654321:Bot）
 ```
+
+Claude APIのキーを設定すると、ゲームの質問に答える機能が有効になる:
+
+```env
+ANTHROPIC_API_KEY=Claude APIのキー
+ASSISTANT_MODEL=質問に答えるモデル（既定: claude-opus-5-5）
+```
+
+- 返信先の本文を読むため、Discord Developer PortalでMessage Content Intentを有効にする
+- 会話はルームごとに `sqlite/conversations.sqlite` に保存し、ルームを削除すると一緒に削除する
+- リクエストごとのトークンの使用量をログに出す
 
 ## 使い方
 

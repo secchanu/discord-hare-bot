@@ -27,7 +27,7 @@ export async function handleData(
 	}
 
 	// ルームのゲームはメモリ上のスナップショットのため、最新のデータをストアから取得する
-	const game = (await ctx.gameManager.getGame(room.game.id)) ?? room.game;
+	const game = ctx.gameManager.getGame(room.game.id) ?? room.game;
 
 	const gameData = game.data;
 	if (!Object.keys(gameData).length) {
@@ -49,11 +49,11 @@ export async function handleData(
 
 	const selectRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu);
 
-	await interaction.deferReply();
-	const message = await interaction.editReply({
+	await interaction.reply({
 		content: "抽選するデータを選択してください",
 		components: [selectRow],
 	});
+	const message = await interaction.fetchReply();
 
 	const isCommandUser = createCommandUserFilter(interaction.user.id);
 	const selectInteraction = await message

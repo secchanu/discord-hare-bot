@@ -1,3 +1,4 @@
+import type { Assistant } from "../features/assistant/Assistant";
 import type { EventRoomManager } from "../features/events/EventRoomManager";
 import type { GameManager } from "../features/games/GameManager";
 import type { RoomManager } from "../features/rooms/RoomManager";
@@ -12,4 +13,7 @@ export interface AppContext {
 	gameManager: GameManager;
 	roomManager: RoomManager;
 	eventRoomManager: EventRoomManager;
+	// ゲームの質問に答える機能
+	// Claude API のキーがあるときだけ使う
+	assistant?: Assistant;
 }

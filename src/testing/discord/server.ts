@@ -5,7 +5,9 @@ import {
 	GatewayIntentBits,
 	GuildScheduledEventStatus,
 	InteractionResponseType,
+	type InteractionType,
 	MessageFlags,
+	MessageType,
 	OverwriteType,
 	PermissionFlagsBits,
 	RESTJSONErrorCodes,
@@ -63,6 +65,9 @@ export interface MessageState {
 	visibleTo: string | null;
 	mentionRoleIds: string[];
 	mentionEveryone: boolean;
+	mentionUserIds: string[];
+	/** 返信先のメッセージのID */
+	referenceId: string | null;
 	createdAt: number;
 	editedAt: number | null;
 }
@@ -77,6 +82,7 @@ export interface ScheduledEventState {
 
 interface InteractionState {
 	id: string;
+	type: InteractionType;
 	token: string;
 	userId: string;
 	channelId: string;
@@ -106,10 +112,15 @@ export function apiRequest(method: string, route: RegExp): RequestMatcher {
 	return (request) => request.method === method && route.test(request.fullRoute);
 }
 
+// 実際の Discord の制限
+// Bot のコードの値が誤っていても気付けるよう、Bot のコードとは別に持つ
+
 // インタラクショントークンの有効期限
 const INTERACTION_TOKEN_LIFETIME = 15 * 60 * 1000;
 // インタラクションへの最初の応答の期限
 const INTERACTION_RESPONSE_DEADLINE = 3 * 1000;
+// メッセージの本文の文字数の上限
+const MAX_MESSAGE_LENGTH = 2000;
 
 /**
  * 1つのサーバーだけを持つ偽の Discord
@@ -119,6 +130,9 @@ export class FakeDiscordServer {
 	readonly guildId = SnowflakeUtil.generate().toString();
 	readonly applicationId = SnowflakeUtil.generate().toString();
 	readonly botUserId = this.applicationId;
+	private guildName = "テストサーバー";
+	/** Bot が入力中の表示を出した記録 */
+	readonly typings: { channelId: string; at: number }[] = [];
 
 	readonly roles = new Map<string, RoleState>();
 	readonly members = new Map<string, MemberState>();
@@ -207,6 +221,23 @@ export class FakeDiscordServer {
 		return SnowflakeUtil.generate().toString();
 	}
 
+	/**
+	 * サーバーの名前を変える
+	 */
+	renameGuild(name: string): void {
+		this.guildName = name;
+		this.dispatch("GUILD_UPDATE", this.rawGuild());
+	}
+
+	/**
+	 * メンバーの名前を変える
+	 * Bot は GuildMembers インテントを使わないので、変更は次の接続で Bot に届く
+	 */
+	renameMember(memberId: string, name: string): void {
+		const member = this.members.get(memberId);
+		if (member) member.name = name;
+	}
+
 	addRole(name: string): RoleState {
 		const role = { id: this.nextId(), name };
 		this.roles.set(role.id, role);
@@ -255,8 +286,18 @@ export class FakeDiscordServer {
 	postMessage(
 		authorId: string,
 		channelId: string,
-		options: { content?: string; mentionRoleIds?: string[]; mentionEveryone?: boolean },
+		options: {
+			content?: string;
+			mentionRoleIds?: string[];
+			mentionEveryone?: boolean;
+			mentionUserIds?: string[];
+			replyToId?: string;
+			// 返信先の投稿者に通知するか（Discord のアプリの既定は通知する）
+			notifyRepliedUser?: boolean;
+		},
 	): MessageState {
+		const replyTo = options.replyToId ? this.requireMessage(options.replyToId) : null;
+		const notifyRepliedUser = replyTo !== null && (options.notifyRepliedUser ?? true);
 		const message = this.createMessage({
 			channelId,
 			authorId,
@@ -265,6 +306,11 @@ export class FakeDiscordServer {
 			visibleTo: null,
 			mentionRoleIds: options.mentionRoleIds ?? [],
 			mentionEveryone: options.mentionEveryone ?? false,
+			mentionUserIds: [
+				...(options.mentionUserIds ?? []),
+				...(notifyRepliedUser && replyTo ? [replyTo.authorId] : []),
+			],
+			referenceId: replyTo?.id ?? null,
 		});
 		this.dispatch("MESSAGE_CREATE", this.rawMessage(message));
 		return message;
@@ -320,6 +366,7 @@ export class FakeDiscordServer {
 	): InteractionRecord {
 		const state: InteractionState = {
 			id: this.nextId(),
+			type: body.type as InteractionType,
 			token: `token-${this.nextId()}`,
 			userId,
 			channelId,
@@ -427,11 +474,28 @@ export class FakeDiscordServer {
 		}
 		if (method === "GET" && (params = route(/^\/channels\/(\d+)\/messages$/))) {
 			const limit = Number(request.query?.get("limit") ?? 50);
-			return [...this.messages.values()]
-				.filter((message) => message.channelId === params?.[0] && message.visibleTo === null)
-				.sort((a, b) => b.createdAt - a.createdAt)
-				.slice(0, limit)
-				.map((message) => this.rawMessage(message));
+			return (
+				[...this.messages.values()]
+					.filter((message) => message.channelId === params?.[0] && message.visibleTo === null)
+					// 偽の時計では投稿時刻が重なるので、投稿順に振る ID で並べる
+					.sort((a, b) => (BigInt(a.id) < BigInt(b.id) ? 1 : -1))
+					.slice(0, limit)
+					.map((message) => this.rawMessage(message))
+			);
+		}
+		if (method === "GET" && (params = route(/^\/channels\/(\d+)\/messages\/(\d+)$/))) {
+			const message = this.requireMessage(params[1], request);
+			if (message.channelId !== params[0]) {
+				throw this.error(request, RESTJSONErrorCodes.UnknownMessage, 404);
+			}
+			return this.rawMessage(message);
+		}
+		if (method === "POST" && (params = route(/^\/channels\/(\d+)\/messages$/))) {
+			return this.sendMessage(params[0], body, request);
+		}
+		if (method === "POST" && (params = route(/^\/channels\/(\d+)\/typing$/))) {
+			this.typings.push({ channelId: params[0], at: Date.now() });
+			return undefined;
 		}
 		if (method === "POST" && route(/^\/guilds\/(\d+)\/channels$/)) {
 			return this.rawChannel(this.createChannelFromBody(body));
@@ -591,6 +655,63 @@ export class FakeDiscordServer {
 		return this.rawMessage(message);
 	}
 
+	/**
+	 * Bot がチャンネルにメッセージを送る（返信を含む）
+	 */
+	private sendMessage(
+		channelId: string,
+		body: Record<string, unknown>,
+		request: ApiRequest,
+	): Record<string, unknown> {
+		this.requireChannel(channelId, request);
+		const content = (body.content as string | undefined) ?? "";
+		const components = (body.components as unknown[] | undefined) ?? [];
+		if (!content && components.length === 0 && !(body.embeds as unknown[] | undefined)?.length) {
+			throw this.error(request, RESTJSONErrorCodes.CannotSendAnEmptyMessage, 400);
+		}
+		if (content.length > MAX_MESSAGE_LENGTH) {
+			throw this.error(request, RESTJSONErrorCodes.InvalidFormBodyOrContentType, 400);
+		}
+
+		// 返信先がないとき、fail_if_not_exists が false なら返信先なしで投稿する
+		const reference = body.message_reference as
+			| { message_id?: string; fail_if_not_exists?: boolean }
+			| undefined;
+		const replyTo =
+			reference?.message_id &&
+			(reference.fail_if_not_exists !== false || this.messages.has(reference.message_id))
+				? this.requireMessage(reference.message_id, request)
+				: null;
+
+		// allowed_mentions がなければ、本文のメンションはすべて通知する
+		const allowed = body.allowed_mentions as
+			| { parse?: string[]; users?: string[]; roles?: string[]; replied_user?: boolean }
+			| undefined;
+		const parse = allowed ? (allowed.parse ?? []) : ["everyone", "roles", "users"];
+		const userIds = [...content.matchAll(/<@!?(\d+)>/g)]
+			.map((match) => match[1])
+			.filter((id) => parse.includes("users") || allowed?.users?.includes(id));
+		const roleIds = [...content.matchAll(/<@&(\d+)>/g)]
+			.map((match) => match[1])
+			.filter((id) => parse.includes("roles") || allowed?.roles?.includes(id));
+		const notifyRepliedUser = replyTo !== null && (allowed ? allowed.replied_user === true : true);
+
+		const message = this.createMessage({
+			channelId,
+			authorId: this.botUserId,
+			content,
+			components,
+			visibleTo: null,
+			mentionRoleIds: roleIds,
+			mentionEveryone: /@(everyone|here)/.test(content) && parse.includes("everyone"),
+			mentionUserIds: [...userIds, ...(notifyRepliedUser && replyTo ? [replyTo.authorId] : [])],
+			referenceId: replyTo?.id ?? null,
+		});
+		const raw = this.rawMessage(message);
+		this.dispatchLater("MESSAGE_CREATE", raw);
+		return raw;
+	}
+
 	private createChannelFromBody(body: Record<string, unknown>): ChannelState {
 		const channel: ChannelState = {
 			id: this.nextId(),
@@ -652,8 +773,13 @@ export class FakeDiscordServer {
 		message.editedAt = Date.now();
 	}
 
-	private createMessage(fields: Omit<MessageState, "id" | "createdAt" | "editedAt">): MessageState {
+	private createMessage(
+		fields: Omit<MessageState, "id" | "createdAt" | "editedAt" | "mentionUserIds" | "referenceId"> &
+			Partial<Pick<MessageState, "mentionUserIds" | "referenceId">>,
+	): MessageState {
 		const message: MessageState = {
+			mentionUserIds: [],
+			referenceId: null,
 			...fields,
 			id: this.nextId(),
 			createdAt: Date.now(),
@@ -794,26 +920,61 @@ export class FakeDiscordServer {
 		};
 	}
 
-	rawMessage(message: MessageState) {
+	/**
+	 * @param nested 返信先として入れ子にするか（入れ子のメッセージには返信先を含めない）
+	 */
+	rawMessage(message: MessageState, nested = false): Record<string, unknown> {
+		// MessageContent インテントがない Bot には、Bot 自身の発言と Bot へのメンションの本文だけが届く
+		const contentVisible =
+			this.hasIntent(GatewayIntentBits.MessageContent) ||
+			message.authorId === this.botUserId ||
+			message.mentionUserIds.includes(this.botUserId);
+		const reference = message.referenceId ? this.messages.get(message.referenceId) : undefined;
+		const originToken = this.messageOrigin.get(message.id);
+		const interaction = originToken ? this.interactions.get(originToken) : undefined;
 		return {
 			id: message.id,
 			channel_id: message.channelId,
 			guild_id: this.guildId,
 			author: this.rawUser(message.authorId),
 			member: this.rawMember(message.authorId),
-			content: message.content,
+			content: contentVisible ? message.content : "",
 			timestamp: new Date(message.createdAt).toISOString(),
 			edited_timestamp: message.editedAt === null ? null : new Date(message.editedAt).toISOString(),
 			tts: false,
 			mention_everyone: message.mentionEveryone,
-			mentions: [],
+			mentions: message.mentionUserIds.map((id) => this.rawUser(id)),
 			mention_roles: message.mentionRoleIds,
 			attachments: [],
 			embeds: [],
 			pinned: false,
-			type: 0,
+			type: message.referenceId ? MessageType.Reply : MessageType.Default,
 			flags: message.visibleTo === null ? 0 : MessageFlags.Ephemeral,
 			components: message.components,
+			// インタラクションへの応答のメッセージには、応答したインタラクションが付く
+			...(interaction
+				? {
+						interaction_metadata: {
+							id: interaction.id,
+							type: interaction.type,
+							user: this.rawUser(interaction.userId),
+							authorizing_integration_owners: {},
+						},
+					}
+				: {}),
+			...(message.referenceId
+				? {
+						message_reference: {
+							type: 0,
+							message_id: message.referenceId,
+							channel_id: message.channelId,
+							guild_id: this.guildId,
+						},
+						...(nested
+							? {}
+							: { referenced_message: reference ? this.rawMessage(reference, true) : null }),
+					}
+				: {}),
 		};
 	}
 
@@ -857,7 +1018,7 @@ export class FakeDiscordServer {
 	private rawGuild() {
 		return {
 			id: this.guildId,
-			name: "テストサーバー",
+			name: this.guildName,
 			icon: null,
 			owner_id: this.botUserId,
 			features: [],

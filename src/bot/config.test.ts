@@ -34,6 +34,26 @@ describe("設定の読み込み", () => {
 	it("除外ロールが未設定の場合は、除外するロールはない", () => {
 		expect(loadConfig(env).ignoreRoleIds).toEqual([]);
 	});
+
+	it("Claude API のキーがある場合は、ゲームの質問に答える機能を使う", () => {
+		const config = loadConfig({ ...env, ANTHROPIC_API_KEY: "key" });
+
+		expect(config.assistant?.anthropicApiKey).toBe("key");
+	});
+
+	it("質問に答えるモデルは環境変数で切り替えられる", () => {
+		const config = loadConfig({
+			...env,
+			ANTHROPIC_API_KEY: "key",
+			ASSISTANT_MODEL: "claude-sonnet-5-5",
+		});
+
+		expect(config.assistant?.model).toBe("claude-sonnet-5-5");
+	});
+
+	it("Claude API のキーが未設定の場合は、ゲームの質問に答える機能を使わない", () => {
+		expect(loadConfig(env).assistant).toBeUndefined();
+	});
 });
 
 describe("設定の検証", () => {

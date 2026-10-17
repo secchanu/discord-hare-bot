@@ -228,7 +228,7 @@ export class Room {
 			if (textResult.status === "rejected") throw textResult.reason;
 			if (voiceResult.status === "rejected") throw voiceResult.reason;
 
-			await this.hooks.persist(this);
+			this.hooks.persist(this);
 
 			return this.categoryId;
 		} catch (error) {
@@ -381,11 +381,11 @@ export class Room {
 	 * ゲームを設定し、ボイスチャンネル名に反映する
 	 * ロールの検証とゲームの解決は RoomManager.changeGame() が行う
 	 */
-	async setGame(game: Game): Promise<void> {
+	setGame(game: Game): void {
 		if (this._game.id === game.id) return;
 
 		this._game = game;
-		await this.hooks.persist(this);
+		this.hooks.persist(this);
 
 		this.requestVoiceChannelRename(game.name);
 	}
@@ -418,14 +418,16 @@ export class Room {
 			}
 		} catch (error) {
 			// 途中で失敗しても、作成・削除できた分は状態に反映済みのため、保存してから再スローする
-			await this.hooks.persist(this).catch((persistError) => {
+			try {
+				this.hooks.persist(this);
+			} catch (persistError) {
 				console.error("[Room] Failed to persist after partial VC change:", persistError);
-			});
+			}
 			throw error;
 		}
 
 		if (diff !== 0) {
-			await this.hooks.persist(this);
+			this.hooks.persist(this);
 		}
 
 		return this.additionalVoiceChannelIds.length;

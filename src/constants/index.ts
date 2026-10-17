@@ -17,6 +17,7 @@ export const TIME = {
 
 // Discord の制限
 export const DISCORD_LIMITS = {
+	MAX_MESSAGE_LENGTH: 2000,
 	MAX_SELECT_MENU_OPTIONS: 25,
 	MAX_ADDITIONAL_VOICE_CHANNELS: 25,
 } as const;

@@ -16,10 +16,10 @@ afterEach(() => {
 /**
  * ロール「APEX」を持つメンバーを用意し、必要ならそのゲームにデータを保存する
  */
-async function setupGame(data?: Record<string, string[]>) {
+function setupGame(data?: Record<string, string[]>) {
 	const apex = world.addRole("APEX");
 	const alice = world.addMember("alice", { roles: [apex] });
-	if (data) await world.saveGameData(apex, data);
+	if (data) world.saveGameData(apex, data);
 	return { apex, alice };
 }
 
@@ -35,7 +35,7 @@ async function openForm(member: Member, role: RoleState, key: string) {
 
 describe("実行条件", () => {
 	it("@everyone を指定した場合は実行者にだけエラーを返す", async () => {
-		const { alice } = await setupGame();
+		const { alice } = setupGame();
 
 		const run = await alice.run("game data", world.generalChannel, { game: world.everyoneRole });
 
@@ -67,7 +67,7 @@ describe("実行条件", () => {
 
 describe("編集するデータの選択", () => {
 	it("選択肢には、既存のデータと新規作成が並ぶ", async () => {
-		const { apex, alice } = await setupGame({ マップ: ["A"], キャラ: ["B"] });
+		const { apex, alice } = setupGame({ マップ: ["A"], キャラ: ["B"] });
 
 		const run = await alice.run("game data", world.generalChannel, { game: apex });
 
@@ -80,7 +80,7 @@ describe("編集するデータの選択", () => {
 
 	it("データが24件を超えても、選択肢の最後には新規作成が並ぶ（境界値）", async () => {
 		const keys = Array.from({ length: 25 }, (_, i) => `データ${i + 1}`);
-		const { apex, alice } = await setupGame(Object.fromEntries(keys.map((key) => [key, ["A"]])));
+		const { apex, alice } = setupGame(Object.fromEntries(keys.map((key) => [key, ["A"]])));
 
 		const run = await alice.run("game data", world.generalChannel, { game: apex });
 
@@ -91,7 +91,7 @@ describe("編集するデータの選択", () => {
 	});
 
 	it("既存のデータを選ぶと、データ名と項目を入力済みのフォームが開く", async () => {
-		const { apex, alice } = await setupGame({ マップ: ["A", "B"] });
+		const { apex, alice } = setupGame({ マップ: ["A", "B"] });
 
 		await openForm(alice, apex, "マップ");
 
@@ -99,7 +99,7 @@ describe("編集するデータの選択", () => {
 	});
 
 	it("新規作成を選ぶと、空のフォームが開く", async () => {
-		const { apex, alice } = await setupGame({ マップ: ["A"] });
+		const { apex, alice } = setupGame({ マップ: ["A"] });
 
 		await openForm(alice, apex, "新規作成");
 
@@ -107,7 +107,7 @@ describe("編集するデータの選択", () => {
 	});
 
 	it("フォームを開いた後、選択メニューは未選択に戻る", async () => {
-		const { apex, alice } = await setupGame({ マップ: ["A"] });
+		const { apex, alice } = setupGame({ マップ: ["A"] });
 
 		const message = await openForm(alice, apex, "マップ");
 
@@ -115,7 +115,7 @@ describe("編集するデータの選択", () => {
 	});
 
 	it("実行者以外の選択は受け付けず、操作した人にだけ伝える", async () => {
-		const { apex, alice } = await setupGame({ マップ: ["A"] });
+		const { apex, alice } = setupGame({ マップ: ["A"] });
 		const run = await alice.run("game data", world.generalChannel, { game: apex });
 		const bob = world.addMember("bob", { roles: [apex] });
 
@@ -128,78 +128,78 @@ describe("編集するデータの選択", () => {
 
 describe("データの保存", () => {
 	it("新しいデータ名で送信すると、データを作って作成したことを表示する", async () => {
-		const { apex, alice } = await setupGame();
+		const { apex, alice } = setupGame();
 		const message = await openForm(alice, apex, "新規作成");
 
 		await alice.submitModal({ key: "マップ", data: "A\nB" });
 
 		expect(message.content).toBe("APEX: 「マップ」のデータを作成しました\n`A, B`");
-		expect(await world.savedGameData(apex)).toEqual({ マップ: ["A", "B"] });
+		expect(world.savedGameData(apex)).toEqual({ マップ: ["A", "B"] });
 	});
 
 	it("項目は改行で区切り、前後の空白と空行を除いて保存する", async () => {
-		const { apex, alice } = await setupGame();
+		const { apex, alice } = setupGame();
 		await openForm(alice, apex, "新規作成");
 
 		await alice.submitModal({ key: "マップ", data: "  A  \n\n B \n" });
 
-		expect(await world.savedGameData(apex)).toEqual({ マップ: ["A", "B"] });
+		expect(world.savedGameData(apex)).toEqual({ マップ: ["A", "B"] });
 	});
 
 	it("既存のデータを送信すると、更新して更新したことを表示する", async () => {
-		const { apex, alice } = await setupGame({ マップ: ["A"] });
+		const { apex, alice } = setupGame({ マップ: ["A"] });
 		const message = await openForm(alice, apex, "マップ");
 
 		await alice.submitModal({ data: "A\nB" });
 
 		expect(message.content).toBe("APEX: 「マップ」のデータを更新しました\n`A, B`");
-		expect(await world.savedGameData(apex)).toEqual({ マップ: ["A", "B"] });
+		expect(world.savedGameData(apex)).toEqual({ マップ: ["A", "B"] });
 	});
 
 	it("データ名を変えて送信すると、古いデータ名を消して名前を変えたことを表示する", async () => {
-		const { apex, alice } = await setupGame({ マップ: ["A"] });
+		const { apex, alice } = setupGame({ マップ: ["A"] });
 		const message = await openForm(alice, apex, "マップ");
 
 		await alice.submitModal({ key: "ステージ" });
 
 		expect(message.content).toBe("APEX: 「マップ」のデータを「ステージ」に更新しました\n`A`");
-		expect(await world.savedGameData(apex)).toEqual({ ステージ: ["A"] });
+		expect(world.savedGameData(apex)).toEqual({ ステージ: ["A"] });
 	});
 
 	it("項目を空にして送信すると、データを削除して削除したことを表示する", async () => {
-		const { apex, alice } = await setupGame({ マップ: ["A"], キャラ: ["B"] });
+		const { apex, alice } = setupGame({ マップ: ["A"], キャラ: ["B"] });
 		const message = await openForm(alice, apex, "マップ");
 
 		await alice.submitModal({ data: "\n  \n" });
 
 		expect(message.content).toBe("APEX: 「マップ」のデータを削除しました");
-		expect(await world.savedGameData(apex)).toEqual({ キャラ: ["B"] });
+		expect(world.savedGameData(apex)).toEqual({ キャラ: ["B"] });
 	});
 
 	it("データ名が空白だけの場合は保存せず、編集画面を取り下げて実行者にだけ伝える", async () => {
-		const { apex, alice } = await setupGame();
+		const { apex, alice } = setupGame();
 		const message = await openForm(alice, apex, "新規作成");
 
 		const record = await alice.submitModal({ key: "  ", data: "A" });
 
 		expect(record.privateMessages).toEqual(["APEX: データ名が入力されていません"]);
 		expect(world.message(message.id)).toBeUndefined();
-		expect(await world.savedGameData(apex)).toEqual({});
+		expect(world.savedGameData(apex)).toEqual({});
 	});
 
 	it("フォームを閉じて別のデータを選び直すと、送信したフォームの内容で保存する", async () => {
-		const { apex, alice } = await setupGame({ マップ: ["A"], キャラ: ["B"] });
+		const { apex, alice } = setupGame({ マップ: ["A"], キャラ: ["B"] });
 		const message = await openForm(alice, apex, "マップ");
 		alice.closeModal();
 		await alice.select(message, "data_key", ["キャラ"]);
 
 		await alice.submitModal({ data: "B\nC" });
 
-		expect(await world.savedGameData(apex)).toEqual({ マップ: ["A"], キャラ: ["B", "C"] });
+		expect(world.savedGameData(apex)).toEqual({ マップ: ["A"], キャラ: ["B", "C"] });
 	});
 
 	it("保存したデータは、Botを再起動しても残る", async () => {
-		const { apex, alice } = await setupGame();
+		const { apex, alice } = setupGame();
 		await openForm(alice, apex, "新規作成");
 		await alice.submitModal({ key: "マップ", data: "A" });
 
@@ -212,7 +212,7 @@ describe("データの保存", () => {
 
 describe("無操作の時間", () => {
 	it("選択がないまま無操作の時間が過ぎると、「タイムアウトしました」に置き換えてメニューを取り除く", async () => {
-		const { apex, alice } = await setupGame({ マップ: ["A"] });
+		const { apex, alice } = setupGame({ マップ: ["A"] });
 		const run = await alice.run("game data", world.generalChannel, { game: apex });
 
 		await world.advance(TIMEOUT.COMPONENT_IDLE);
@@ -222,7 +222,7 @@ describe("無操作の時間", () => {
 	});
 
 	it("無操作の時間を過ぎた後に送信したフォームは保存せず、操作した人にだけ期限切れを伝える", async () => {
-		const { apex, alice } = await setupGame({ マップ: ["A"] });
+		const { apex, alice } = setupGame({ マップ: ["A"] });
 		await openForm(alice, apex, "マップ");
 		await world.advance(TIMEOUT.COMPONENT_IDLE);
 
@@ -232,16 +232,16 @@ describe("無操作の時間", () => {
 		expect(record.privateMessages).toEqual([
 			"この操作は期限切れです\nコマンドを再実行してください",
 		]);
-		expect(await world.savedGameData(apex)).toEqual({ マップ: ["A"] });
+		expect(world.savedGameData(apex)).toEqual({ マップ: ["A"] });
 	});
 
 	it("フォームを開いてから無操作の時間に満たなければ、送信を保存する", async () => {
-		const { apex, alice } = await setupGame({ マップ: ["A"] });
+		const { apex, alice } = setupGame({ マップ: ["A"] });
 		await openForm(alice, apex, "マップ");
 		await world.advance(TIMEOUT.COMPONENT_IDLE - TIME.SECOND);
 
 		await alice.submitModal({ data: "B" });
 
-		expect(await world.savedGameData(apex)).toEqual({ マップ: ["B"] });
+		expect(world.savedGameData(apex)).toEqual({ マップ: ["B"] });
 	});
 });
