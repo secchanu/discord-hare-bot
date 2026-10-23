@@ -301,7 +301,7 @@ function withIntermediateBreakpoints(messages: BetaMessageParam[]): BetaMessageP
 	const positions = messages
 		.slice(start, end + 1)
 		.flatMap((message, offset) =>
-			typeof message.content === "string"
+			message.role !== "assistant" || typeof message.content === "string"
 				? []
 				: message.content.map((_, blockIndex) => ({ messageIndex: start + offset, blockIndex })),
 		);
@@ -322,7 +322,7 @@ function withIntermediateBreakpoints(messages: BetaMessageParam[]): BetaMessageP
 			...content[position.blockIndex],
 			cache_control: { type: "ephemeral" },
 		} as BetaContentBlockParam;
-		result[position.messageIndex] = { ...result[position.messageIndex], content };
+		result[position.messageIndex] = { role: "assistant", content };
 	}
 	return result;
 }
