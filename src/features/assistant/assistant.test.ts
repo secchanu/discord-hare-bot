@@ -1,14 +1,14 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { afterEach, describe, expect, it } from "vitest";
 import { TIME } from "../../constants";
-import { apiRequest } from "../../testing/discord/server";
+import { type AttachmentState, apiRequest } from "../../testing/discord/server";
 import { createWorld, type World } from "../../testing/world";
 import type { CreateMessage } from "./Claude";
 
 type BetaMessage = Anthropic.Beta.Messages.BetaMessage;
 type BetaMessageParam = Anthropic.Beta.Messages.BetaMessageParam;
 type MessageCreateParams = Anthropic.Beta.Messages.MessageCreateParamsNonStreaming;
-type Block = { type: string; cache_control?: unknown };
+type Block = { type: string; text?: string; cache_control?: unknown };
 
 // API が受け付けるキャッシュブレークポイントの数の上限
 const MAX_BREAKPOINTS = 4;
@@ -454,6 +454,311 @@ describe("会話", () => {
 		await world.settle();
 
 		expect(world.savedConversation(room.categoryId)).toBeUndefined();
+	});
+});
+
+describe("添付ファイル", () => {
+	function image(width = 800, height = 600): Omit<AttachmentState, "id"> {
+		return { filename: "screenshot.png", contentType: "image/png", width, height };
+	}
+
+	function file(filename: string, contentType: string): Omit<AttachmentState, "id"> {
+		return { filename, contentType, width: null, height: null };
+	}
+
+	/**
+	 * 質問のメッセージのブロック
+	 */
+	function questionBlocks(request: MessageCreateParams, index = 0): Block[] {
+		return blocksOf(request.messages.filter((message) => message.role === "user")[index]);
+	}
+
+	/**
+	 * 質問のメッセージに添えたファイルのID
+	 */
+	function attachedFileIds(request: MessageCreateParams, index = 0): string[] {
+		return questionBlocks(request, index).flatMap((block) => {
+			const { source } = block as { source?: { type: string; file_id: string } };
+			return source?.type === "file" ? [source.file_id] : [];
+		});
+	}
+
+	it("質問に付いた画像を、Claude API にアップロードしたファイルで渡す", async () => {
+		const claude = fakeClaude([claudeMessage([text("答え")])]);
+		world = await createWorld({ claude: claude.createMessage });
+		const { room, members } = await world.setupRoom("alice");
+
+		const question = await members[0].post(room.textChannel, {
+			mentionBot: true,
+			content: "これ何？",
+			attachments: [image()],
+		});
+
+		const [fileId] = attachedFileIds(claude.requests[0]);
+		const [attachment] = world.server.messages.get(question.id)?.attachments ?? [];
+		expect(world.claudeFiles.stored.get(fileId)).toEqual({
+			type: "image/png",
+			content: `${attachment.id}:800x600`,
+		});
+	});
+
+	it("PDF は、ファイル名を題名にして document ブロックで渡す", async () => {
+		const claude = fakeClaude([claudeMessage([text("答え")])]);
+		world = await createWorld({ claude: claude.createMessage });
+		const { room, members } = await world.setupRoom("alice");
+
+		await members[0].post(room.textChannel, {
+			mentionBot: true,
+			content: "要約して",
+			attachments: [file("rules.pdf", "application/pdf")],
+		});
+
+		const [fileId] = attachedFileIds(claude.requests[0]);
+		expect(questionBlocks(claude.requests[0])).toContainEqual({
+			type: "document",
+			source: { type: "file", file_id: fileId },
+			title: "rules.pdf",
+		});
+		expect(world.claudeFiles.stored.get(fileId)?.type).toBe("application/pdf");
+	});
+
+	it.each(["text/plain; charset=utf-8", "text/markdown; charset=utf-8", "text/csv"])(
+		"%s の添付ファイルは、text/plain の document ブロックで渡す",
+		async (contentType) => {
+			const claude = fakeClaude([claudeMessage([text("答え")])]);
+			world = await createWorld({ claude: claude.createMessage });
+			const { room, members } = await world.setupRoom("alice");
+
+			await members[0].post(room.textChannel, {
+				mentionBot: true,
+				content: "読んで",
+				attachments: [file("notes", contentType)],
+			});
+
+			const [fileId] = attachedFileIds(claude.requests[0]);
+			expect(questionBlocks(claude.requests[0])).toContainEqual(
+				expect.objectContaining({ type: "document" }),
+			);
+			expect(world.claudeFiles.stored.get(fileId)?.type).toBe("text/plain");
+		},
+	);
+
+	it("添付ファイルは、それぞれに見出しを付けて本文より前に渡す", async () => {
+		const claude = fakeClaude([claudeMessage([text("答え")])]);
+		world = await createWorld({ claude: claude.createMessage });
+		const { room, members } = await world.setupRoom("alice");
+
+		await members[0].post(room.textChannel, {
+			mentionBot: true,
+			content: "違いは？",
+			attachments: [image(), file("rules.pdf", "application/pdf")],
+		});
+
+		const blocks = questionBlocks(claude.requests[0]);
+		expect(blocks.map((block) => (block.type === "text" ? block.text : block.type))).toEqual([
+			"添付1:",
+			"image",
+			"添付2:",
+			"document",
+			expect.stringContaining("違いは？"),
+		]);
+	});
+
+	it("本文では、添付ファイルの付いた発言の後に添付ファイルの見出しを示す", async () => {
+		const claude = fakeClaude([claudeMessage([text("答え")])]);
+		world = await createWorld({ claude: claude.createMessage });
+		const { room, members } = await world.setupRoom("alice", "carol");
+		const target = await members[1].post(room.textChannel, {
+			content: "勝った！",
+			attachments: [image()],
+		});
+
+		await members[0].post(room.textChannel, {
+			mentionBot: true,
+			content: "これと比べて",
+			replyTo: target,
+			attachments: [image()],
+		});
+
+		expect(questionBlocks(claude.requests[0]).at(-1)).toEqual({
+			type: "text",
+			text: "> carol: 勝った！\n> [添付1: screenshot.png]\nalice: @hare これと比べて\n[添付2: screenshot.png]",
+		});
+	});
+
+	it("返信先の発言に付いた添付ファイルも渡す", async () => {
+		const claude = fakeClaude([claudeMessage([text("答え")])]);
+		world = await createWorld({ claude: claude.createMessage });
+		const { room, members } = await world.setupRoom("alice", "carol");
+		const target = await members[1].post(room.textChannel, { attachments: [image()] });
+
+		await members[0].post(room.textChannel, {
+			mentionBot: true,
+			content: "これ何？",
+			replyTo: target,
+		});
+
+		expect(attachedFileIds(claude.requests[0])).toHaveLength(1);
+	});
+
+	it("Claude が読めない形式の添付ファイルは渡さない", async () => {
+		const claude = fakeClaude([claudeMessage([text("答え")])]);
+		world = await createWorld({ claude: claude.createMessage });
+		const { room, members } = await world.setupRoom("alice");
+
+		await members[0].post(room.textChannel, {
+			mentionBot: true,
+			content: "見て",
+			attachments: [
+				file("clip.mp4", "video/mp4"),
+				file(
+					"memo.docx",
+					"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+				),
+			],
+		});
+
+		expect(attachedFileIds(claude.requests[0])).toEqual([]);
+		expect(world.claudeFiles.stored.size).toBe(0);
+	});
+
+	it("長辺が2000pxを超える画像は、縦横比を保って長辺2000pxに縮めてから渡す", async () => {
+		const claude = fakeClaude([claudeMessage([text("答え")])]);
+		world = await createWorld({ claude: claude.createMessage });
+		const { room, members } = await world.setupRoom("alice");
+
+		await members[0].post(room.textChannel, {
+			mentionBot: true,
+			content: "これ何？",
+			attachments: [image(4000, 3000)],
+		});
+
+		const [fileId] = attachedFileIds(claude.requests[0]);
+		expect(world.claudeFiles.stored.get(fileId)?.content).toMatch(/:2000x1500$/);
+	});
+
+	it("添付ファイルを取得できなかった場合は、答えを用意できなかったと返信する", async () => {
+		const claude = fakeClaude([claudeMessage([text("答え")])]);
+		world = await createWorld({ claude: claude.createMessage });
+		const { room, members } = await world.setupRoom("alice");
+
+		world.server.makeAttachmentsUnavailable();
+		await members[0].post(room.textChannel, {
+			mentionBot: true,
+			content: "これ何？",
+			attachments: [image()],
+		});
+
+		expect(claude.requests).toEqual([]);
+		expect(world.botMessages(room.textChannel).map((message) => message.content)).toEqual([
+			"答えを用意できませんでした\n少し待ってからもう一度聞いてください",
+		]);
+	});
+
+	it("前の質問の添付ファイルは、次の質問でも同じファイルで渡す", async () => {
+		const claude = fakeClaude([claudeMessage([text("答え")]), claudeMessage([text("答え")])]);
+		world = await createWorld({ claude: claude.createMessage });
+		const { room, members } = await world.setupRoom("alice");
+		await members[0].post(room.textChannel, {
+			mentionBot: true,
+			content: "これ何？",
+			attachments: [image()],
+		});
+
+		await members[0].post(room.textChannel, { mentionBot: true, content: "強い？" });
+
+		expect(attachedFileIds(claude.requests[1])).toEqual(attachedFileIds(claude.requests[0]));
+		expect(world.claudeFiles.stored.size).toBe(1);
+	});
+
+	it("ルームを削除した場合は、アップロードしたファイルも削除する", async () => {
+		const claude = fakeClaude([claudeMessage([text("答え")])]);
+		world = await createWorld({ claude: claude.createMessage });
+		const { room, members } = await world.setupRoom("alice");
+		await members[0].post(room.textChannel, {
+			mentionBot: true,
+			content: "これ何？",
+			attachments: [image()],
+		});
+		expect(world.claudeFiles.stored.size).toBe(1);
+
+		await members[0].leaveVoice();
+
+		expect(world.claudeFiles.stored.size).toBe(0);
+	});
+
+	it("Bot を再起動した後にルームを削除した場合も、アップロードしたファイルを削除する", async () => {
+		const claude = fakeClaude([claudeMessage([text("答え")])]);
+		world = await createWorld({ claude: claude.createMessage });
+		const { room, members } = await world.setupRoom("alice");
+		await members[0].post(room.textChannel, {
+			mentionBot: true,
+			content: "これ何？",
+			attachments: [image()],
+		});
+
+		await world.restartBot();
+		await members[0].leaveVoice();
+
+		expect(world.claudeFiles.stored.size).toBe(0);
+	});
+
+	it.each([
+		["答えを用意できなかった", new Error("overloaded")],
+		["断られた", claudeMessage([], "refusal")],
+	])("%s場合は、その質問でアップロードしたファイルを削除する", async (_, response) => {
+		const claude = fakeClaude([claudeMessage([text("答え")]), response]);
+		world = await createWorld({ claude: claude.createMessage });
+		const { room, members } = await world.setupRoom("alice");
+		await members[0].post(room.textChannel, {
+			mentionBot: true,
+			content: "これ何？",
+			attachments: [image()],
+		});
+
+		await members[0].post(room.textChannel, {
+			mentionBot: true,
+			content: "これは？",
+			attachments: [image()],
+		});
+
+		expect([...world.claudeFiles.stored.keys()]).toEqual(attachedFileIds(claude.requests[0]));
+	});
+
+	it("答えている途中でルームを削除した場合も、アップロードしたファイルは残らない", async () => {
+		const response = deferred();
+		const claude = fakeClaude([response.promise]);
+		world = await createWorld({ claude: claude.createMessage });
+		const { room, members } = await world.setupRoom("alice");
+		await members[0].post(room.textChannel, {
+			mentionBot: true,
+			content: "これ何？",
+			attachments: [image()],
+		});
+
+		await members[0].leaveVoice();
+		response.resolve(claudeMessage([text("答え")]));
+		await world.settle();
+
+		expect(world.claudeFiles.stored.size).toBe(0);
+	});
+
+	it("アップロードしている途中でルームを削除した場合も、アップロードしたファイルは残らない", async () => {
+		const claude = fakeClaude([claudeMessage([text("答え")])]);
+		world = await createWorld({ claude: claude.createMessage });
+		const { room, members } = await world.setupRoom("alice");
+		const release = world.claudeFiles.hold();
+		await members[0].post(room.textChannel, {
+			mentionBot: true,
+			content: "これ何？",
+			attachments: [image()],
+		});
+
+		await members[0].leaveVoice();
+		release();
+		await world.settle();
+
+		expect(world.claudeFiles.stored.size).toBe(0);
 	});
 });
 

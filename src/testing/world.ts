@@ -12,12 +12,13 @@ import { vi } from "vitest";
 import type { BotConfig } from "../bot/config";
 import type { AppContext } from "../bot/context";
 import { createBot } from "../bot/createBot";
-import type { CreateMessage } from "../features/assistant/Claude";
+import type { ClaudeFiles, CreateMessage } from "../features/assistant/Claude";
 import { ConversationStore } from "../features/assistant/ConversationStore";
 import { GameStore } from "../features/games/GameStore";
 import { RoomStore } from "../features/rooms/RoomStore";
 import type { RoomData } from "../features/rooms/types";
 import {
+	type AttachmentState,
 	type ChannelState,
 	canView,
 	FakeDiscordServer,
@@ -41,6 +42,8 @@ export async function createWorld(options: { claude?: CreateMessage } = {}): Pro
 		now: START_TIME,
 	});
 	const world = new World(options.claude);
+	// Bot が HTTP で取得するのは Discord の添付ファイルだけ
+	vi.stubGlobal("fetch", (input: string | URL | Request) => world.server.fetchAttachment(input));
 	await world.startBot();
 	return world;
 }
@@ -50,6 +53,7 @@ export async function createWorld(options: { claude?: CreateMessage } = {}): Pro
  */
 export class World {
 	readonly server = new FakeDiscordServer();
+	readonly claudeFiles = new FakeClaudeFiles();
 	readonly ignoredRole: RoleState;
 	readonly readyChannel: ChannelState;
 	readonly wantedChannel: ChannelState;
@@ -59,6 +63,7 @@ export class World {
 		games: new DatabaseSync(":memory:"),
 		rooms: new DatabaseSync(":memory:"),
 		conversations: new DatabaseSync(":memory:"),
+		files: new DatabaseSync(":memory:"),
 	};
 	private bot: { client: Client; ctx: AppContext } | null = null;
 
@@ -100,7 +105,7 @@ export class World {
 	 */
 	async startBot(): Promise<void> {
 		const bot = createBot(this.config, (name) => this.databases[name], {
-			createMessage: this.claude,
+			claudeApi: this.claude && { createMessage: this.claude, files: this.claudeFiles },
 		});
 		this.bot = bot;
 		this.server.connect(bot.client);
@@ -125,6 +130,7 @@ export class World {
 	dispose(): void {
 		this.stopBot();
 		vi.useRealTimers();
+		vi.unstubAllGlobals();
 	}
 
 	/**
@@ -317,6 +323,7 @@ export class Member {
 			mentionBot?: boolean;
 			replyTo?: MessageView;
 			notifyRepliedUser?: boolean;
+			attachments?: Omit<AttachmentState, "id">[];
 		} = {},
 	): Promise<MessageView> {
 		const botId = this.world.server.botUserId;
@@ -328,6 +335,7 @@ export class Member {
 			mentionUserIds: options.mentionBot ? [botId] : [],
 			replyToId: options.replyTo?.id,
 			notifyRepliedUser: options.notifyRepliedUser,
+			attachments: options.attachments,
 		});
 		await this.world.settle();
 		return new MessageView(message);
@@ -678,3 +686,41 @@ export class ScheduledEvent {
 }
 
 export { GuildScheduledEventStatus };
+
+/**
+ * 偽の Claude API のファイルの保管場所
+ */
+export class FakeClaudeFiles implements ClaudeFiles {
+	/** 保管しているファイル（ファイルのIDごと） */
+	readonly stored = new Map<string, { type: string; content: string }>();
+	private count = 0;
+	private held: Promise<void> | null = null;
+
+	async upload(file: File): Promise<string> {
+		const content = await file.text();
+		await this.held;
+		const fileId = `file_${++this.count}`;
+		this.stored.set(fileId, { type: file.type, content });
+		return fileId;
+	}
+
+	async delete(fileId: string): Promise<void> {
+		if (!this.stored.delete(fileId)) throw new Error(`File ${fileId} not found`);
+	}
+
+	/**
+	 * アップロードを、解放するまで終わらせない
+	 * 解放すると、待たせたアップロードはファイルを保管して終わる
+	 * @returns 解放する関数
+	 */
+	hold(): () => void {
+		let release!: () => void;
+		this.held = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		return () => {
+			this.held = null;
+			release();
+		};
+	}
+}

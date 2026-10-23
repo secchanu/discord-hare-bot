@@ -20,6 +20,39 @@ export type CreateMessage = (
 ) => Promise<BetaMessage>;
 
 /**
+ * Claude API のファイルの保管場所
+ */
+export interface ClaudeFiles {
+	/**
+	 * ファイルをアップロードして、ファイルのIDを返す
+	 * signal で中止されたら、アップロードを止める
+	 */
+	upload(file: File, signal: AbortSignal): Promise<string>;
+	delete(fileId: string): Promise<void>;
+}
+
+/**
+ * 質問
+ */
+export interface Question {
+	text: string;
+	// 質問に添えたファイル
+	// 本文は見出しでファイルを指す
+	files: AttachedFile[];
+}
+
+/**
+ * Claude API にアップロードした、質問に添えるファイル
+ * 画像は image ブロック、PDF とテキストは document ブロックで渡す
+ */
+export interface AttachedFile {
+	label: string;
+	kind: "image" | "document";
+	fileId: string;
+	filename: string;
+}
+
+/**
  * 質問を受けた場所
  */
 export interface Place {
@@ -66,7 +99,7 @@ function systemPrompt(place: Place): string {
 - 口調: 先輩が後輩に話すときくらい
 - 文末: 言い切りの形
 - 語: 読み手の知っている語
-- 名称: 日本語版の正式名（日本語版がなければ原語の正式名）
+- 名称: 正式名（日本語版があれば日本語版での名前）
 - 丸括弧: 補足は全角、同じものの言い換えは半角
 - 書式: DiscordのMarkdownを内容に合わせて使う`;
 }
@@ -88,11 +121,27 @@ const MAX_INTERMEDIATE_BREAKPOINTS = 2;
 const MAX_CONTINUATIONS = 5;
 
 /**
- * API キーを使って、Claude API にメッセージを送る関数を作る
+ * Claude API とのやり取り
  */
-export function claudeMessageSender(apiKey: string): CreateMessage {
+export interface ClaudeApi {
+	createMessage: CreateMessage;
+	files: ClaudeFiles;
+}
+
+/**
+ * API キーを使って、Claude API とやり取りする関数を作る
+ */
+export function claudeApi(apiKey: string): ClaudeApi {
 	const client = new Anthropic({ apiKey });
-	return (params, signal) => client.beta.messages.create(params, { signal });
+	return {
+		createMessage: (params, signal) => client.beta.messages.create(params, { signal }),
+		files: {
+			upload: async (file, signal) => (await client.files.upload({ file }, { signal })).id,
+			delete: async (fileId) => {
+				await client.files.delete(fileId);
+			},
+		},
+	};
 }
 
 /**
@@ -111,7 +160,7 @@ export class Claude {
 	 */
 	async answer(
 		conversation: Conversation,
-		question: string,
+		question: Question,
 		place: Place,
 		signal: AbortSignal,
 	): Promise<Answer> {
@@ -206,21 +255,36 @@ export class Claude {
 
 /**
  * 会話に質問を追記したメッセージ
+ * ファイルは見出しを付けて本文より前に置く
  * ルームのゲームが会話で伝えたゲームと違えば、質問の直後にシステムメッセージで伝える
  */
 function withQuestion(
 	conversation: Conversation,
-	question: string,
+	question: Question,
 	game: Game,
 ): BetaMessageParam[] {
-	const messages: BetaMessageParam[] = [
-		...conversation.messages,
-		{ role: "user", content: question },
-	];
+	const content: string | BetaContentBlockParam[] =
+		question.files.length === 0
+			? question.text
+			: [
+					...question.files.flatMap((file): BetaContentBlockParam[] => [
+						{ type: "text", text: `${file.label}:` },
+						fileBlock(file),
+					]),
+					{ type: "text", text: question.text },
+				];
+	const messages: BetaMessageParam[] = [...conversation.messages, { role: "user", content }];
 	if (conversation.gameId !== game.id) {
 		messages.push({ role: "system", content: `ルームのゲーム: ${game.name}` });
 	}
 	return messages;
+}
+
+function fileBlock({ kind, fileId, filename }: AttachedFile): BetaContentBlockParam {
+	const source = { type: "file", file_id: fileId } as const;
+	return kind === "image"
+		? { type: "image", source }
+		: { type: "document", source, title: filename };
 }
 
 /**

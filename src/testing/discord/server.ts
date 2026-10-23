@@ -68,8 +68,18 @@ export interface MessageState {
 	mentionUserIds: string[];
 	/** 返信先のメッセージのID */
 	referenceId: string | null;
+	attachments: AttachmentState[];
 	createdAt: number;
 	editedAt: number | null;
+}
+
+export interface AttachmentState {
+	id: string;
+	filename: string;
+	contentType: string | null;
+	/** 画像の大きさ。画像でなければ null */
+	width: number | null;
+	height: number | null;
 }
 
 export interface ScheduledEventState {
@@ -121,6 +131,10 @@ const INTERACTION_TOKEN_LIFETIME = 15 * 60 * 1000;
 const INTERACTION_RESPONSE_DEADLINE = 3 * 1000;
 // メッセージの本文の文字数の上限
 const MAX_MESSAGE_LENGTH = 2000;
+// 添付ファイルを配信するホスト
+const CDN_HOST = "cdn.discordapp.com";
+const MEDIA_PROXY_HOST = "media.discordapp.net";
+const ATTACHMENT_HOSTS = [CDN_HOST, MEDIA_PROXY_HOST];
 
 /**
  * 1つのサーバーだけを持つ偽の Discord
@@ -151,6 +165,9 @@ export class FakeDiscordServer {
 	private messageOrigin = new Map<string, string>();
 	private registeredCommands: Record<string, unknown>[] = [];
 	private failures: { matcher: RequestMatcher; code: number }[] = [];
+	private attachmentsUnavailable = false;
+	/** 添付ファイルを取得した URL */
+	readonly attachmentRequests: string[] = [];
 	private holds: { matcher: RequestMatcher; released: Promise<void> }[] = [];
 	private client: Client | null = null;
 
@@ -294,6 +311,7 @@ export class FakeDiscordServer {
 			replyToId?: string;
 			// 返信先の投稿者に通知するか（Discord のアプリの既定は通知する）
 			notifyRepliedUser?: boolean;
+			attachments?: Omit<AttachmentState, "id">[];
 		},
 	): MessageState {
 		const replyTo = options.replyToId ? this.requireMessage(options.replyToId) : null;
@@ -311,9 +329,48 @@ export class FakeDiscordServer {
 				...(notifyRepliedUser && replyTo ? [replyTo.authorId] : []),
 			],
 			referenceId: replyTo?.id ?? null,
+			attachments: (options.attachments ?? []).map((attachment) => ({
+				...attachment,
+				id: this.nextId(),
+			})),
 		});
 		this.dispatch("MESSAGE_CREATE", this.rawMessage(message));
 		return message;
+	}
+
+	/**
+	 * Discord の CDN とメディアプロキシへの HTTP リクエストに応じる
+	 * 添付ファイルの中身は「ID:幅x高さ」の文字列で表す
+	 * メディアプロキシに width と height を付けると、その大きさに縮めた画像を返す
+	 */
+	async fetchAttachment(input: string | URL | Request): Promise<Response> {
+		const url = new URL(input instanceof Request ? input.url : input);
+		this.attachmentRequests.push(url.href);
+		const [, , , attachmentId] = url.pathname.split("/");
+		const attachment = [...this.messages.values()]
+			.flatMap((message) => message.attachments)
+			.find((item) => item.id === attachmentId);
+		if (!attachment || this.attachmentsUnavailable || !ATTACHMENT_HOSTS.includes(url.host)) {
+			return new Response(null, { status: 404 });
+		}
+
+		const resized = url.host === MEDIA_PROXY_HOST;
+		const width = (resized && url.searchParams.get("width")) || attachment.width;
+		const height = (resized && url.searchParams.get("height")) || attachment.height;
+		return new Response(`${attachment.id}:${width}x${height}`, {
+			headers: attachment.contentType ? { "content-type": attachment.contentType } : {},
+		});
+	}
+
+	/**
+	 * 添付ファイルを取得できなくする
+	 * @returns 取得できるように戻す関数
+	 */
+	makeAttachmentsUnavailable(): () => void {
+		this.attachmentsUnavailable = true;
+		return () => {
+			this.attachmentsUnavailable = false;
+		};
 	}
 
 	createScheduledEvent(name: string, channelId: string): ScheduledEventState {
@@ -774,12 +831,16 @@ export class FakeDiscordServer {
 	}
 
 	private createMessage(
-		fields: Omit<MessageState, "id" | "createdAt" | "editedAt" | "mentionUserIds" | "referenceId"> &
-			Partial<Pick<MessageState, "mentionUserIds" | "referenceId">>,
+		fields: Omit<
+			MessageState,
+			"id" | "createdAt" | "editedAt" | "mentionUserIds" | "referenceId" | "attachments"
+		> &
+			Partial<Pick<MessageState, "mentionUserIds" | "referenceId" | "attachments">>,
 	): MessageState {
 		const message: MessageState = {
 			mentionUserIds: [],
 			referenceId: null,
+			attachments: [],
 			...fields,
 			id: this.nextId(),
 			createdAt: Date.now(),
@@ -945,7 +1006,21 @@ export class FakeDiscordServer {
 			mention_everyone: message.mentionEveryone,
 			mentions: message.mentionUserIds.map((id) => this.rawUser(id)),
 			mention_roles: message.mentionRoleIds,
-			attachments: [],
+			attachments: message.attachments.map((attachment) => {
+				const path = `/attachments/${message.channelId}/${attachment.id}/${attachment.filename}`;
+				// 実際の URL と同じく、期限と署名のクエリが付く
+				const query = "?ex=6a000000&is=69f00000&hm=signature";
+				return {
+					id: attachment.id,
+					filename: attachment.filename,
+					size: 1000,
+					url: `https://${CDN_HOST}${path}${query}`,
+					proxy_url: `https://${MEDIA_PROXY_HOST}${path}${query}`,
+					content_type: attachment.contentType ?? undefined,
+					width: attachment.width,
+					height: attachment.height,
+				};
+			}),
 			embeds: [],
 			pinned: false,
 			type: message.referenceId ? MessageType.Reply : MessageType.Default,
