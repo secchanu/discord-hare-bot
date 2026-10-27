@@ -1,4 +1,4 @@
-import Anthropic from "@anthropic-ai/sdk";
+import Anthropic, { BadRequestError } from "@anthropic-ai/sdk";
 import type { Game } from "../games/types";
 import type { Conversation } from "./types";
 
@@ -77,7 +77,7 @@ export type Answer =
 	  }
 	| { refused: true };
 
-function systemPrompt(place: Place): string {
+function systemPrompt(place: Place, hasServerTools: boolean): string {
 	return `あなたはDiscordサーバー「${place.serverName}」のBot「${place.botName}」として、同じゲームを遊ぶメンバーにルームのチャットで応じます。
 
 ## 前提
@@ -91,7 +91,7 @@ function systemPrompt(place: Place): string {
 ## 調べ方
 - 確かめる対象: ゲーム固有の事実、本文で使う名称
 - 確かめ方: 複数の情報源をWeb検索する
-
+${hasServerTools ? "- サーバー固有の事実: サーバーのツールで確かめる\n" : ""}
 ## 文章
 - 優先: わかりやすく短いこと
 - 内容: 必要なことだけ
@@ -116,6 +116,8 @@ const BREAKPOINT_INTERVAL = 15;
 // 長い応答の中に置けるキャッシュブレークポイントの数
 // 上限の4から、システムプロンプトと会話の末尾の分を除く
 const MAX_INTERMEDIATE_BREAKPOINTS = 2;
+// MCP コネクタでつなぐ、サーバー固有の情報を返す MCP サーバーの名前
+const MCP_SERVER_NAME = "community";
 // 中断からの再開の上限
 // 値は Claude API のドキュメントの pause_turn の例に合わせる
 const MAX_CONTINUATIONS = 5;
@@ -151,6 +153,8 @@ export class Claude {
 	constructor(
 		private createMessage: CreateMessage,
 		private model: string,
+		// サーバー固有の情報を返す MCP サーバーの URL
+		private mcpUrl?: string,
 	) {}
 
 	/**
@@ -166,13 +170,27 @@ export class Claude {
 	): Promise<Answer> {
 		const messages = withQuestion(conversation, question, place.game);
 		const replies: BetaMessageParam[] = [];
+		let mcpUrl = this.mcpUrl;
 
 		for (let continuation = 0; continuation <= MAX_CONTINUATIONS; continuation++) {
 			signal.throwIfAborted();
-			const response = await this.createMessage(
-				this.params(place, [...messages, ...replies]),
-				signal,
-			);
+			let response: BetaMessage;
+			try {
+				response = await this.createMessage(
+					this.params(place, [...messages, ...replies], mcpUrl),
+					signal,
+				);
+			} catch (error) {
+				// MCP サーバーにつながらなければ、MCP サーバーなしで答える
+				// つながらないのはツールの一覧を問い合わせるときで、一覧を記録していない会話なので、そのまま送り直せる
+				if (!mcpUrl || !isMcpServerUnreachable(error)) throw error;
+				console.warn("[Claude] MCP server unreachable, answering without it:", error.message);
+				mcpUrl = undefined;
+				response = await this.createMessage(
+					this.params(place, [...messages, ...replies], mcpUrl),
+					signal,
+				);
+			}
 			signal.throwIfAborted();
 			console.log(`[Claude] Usage of ${response.model}:`, JSON.stringify(response.usage));
 			if (response.input_transformations?.length) {
@@ -207,7 +225,11 @@ export class Claude {
 		throw new Error(`No answer within ${MAX_CONTINUATIONS} continuations`);
 	}
 
-	private params(place: Place, messages: BetaMessageParam[]): MessageCreateParams {
+	private params(
+		place: Place,
+		messages: BetaMessageParam[],
+		mcpUrl: string | undefined,
+	): MessageCreateParams {
 		return {
 			model: this.model,
 			max_tokens: 16000,
@@ -215,6 +237,9 @@ export class Claude {
 				"server-side-fallback-2026-07-01",
 				"compact-2026-01-12",
 				"thinking-binding-controls-2026-08-01",
+				// MCP サーバーが返したツールの一覧を会話に記録し、会話の途中でツールが変わらないようにする
+				// 記録した一覧を含む会話は、この beta なしでは送れないので、MCP サーバーを使わないときも付ける
+				"mcp-client-2026-09-15",
 			],
 			fallbacks: "default",
 			output_config: { effort: "low" },
@@ -235,7 +260,7 @@ export class Claude {
 				// システムプロンプトはサーバー名と Bot の表示名が変わるまで同じなので、1時間キャッシュする
 				{
 					type: "text",
-					text: systemPrompt(place),
+					text: systemPrompt(place, mcpUrl !== undefined),
 					cache_control: { type: "ephemeral", ttl: "1h" },
 				},
 			],
@@ -247,10 +272,25 @@ export class Claude {
 				{ type: "web_search_20260318", name: "web_search", allowed_callers: ["direct"] },
 				// ゲームの Wiki のページは大きいので、コード実行で必要な部分だけを抜き出して読ませる
 				{ type: "web_fetch_20260318", name: "web_fetch" },
+				...(mcpUrl ? [{ type: "mcp_toolset" as const, mcp_server_name: MCP_SERVER_NAME }] : []),
 			],
+			...(mcpUrl && {
+				mcp_servers: [{ type: "url" as const, url: mcpUrl, name: MCP_SERVER_NAME }],
+			}),
 			messages: withIntermediateBreakpoints(messages),
 		};
 	}
+}
+
+/**
+ * MCP サーバーにつながらなかったエラーか
+ * エラーにコードが付かないので、メッセージで見分ける
+ */
+function isMcpServerUnreachable(error: unknown): error is BadRequestError {
+	return (
+		error instanceof BadRequestError &&
+		error.message.includes("Error while communicating with MCP server")
+	);
 }
 
 /**

@@ -1,4 +1,4 @@
-import type Anthropic from "@anthropic-ai/sdk";
+import Anthropic from "@anthropic-ai/sdk";
 import { afterEach, describe, expect, it } from "vitest";
 import { TIME } from "../../constants";
 import { type AttachmentState, apiRequest } from "../../testing/discord/server";
@@ -58,6 +58,17 @@ function assertAcceptable(params: MessageCreateParams): void {
 	if (blocks.some((block) => block.type.endsWith("thinking") && block.cache_control)) {
 		throw new Error("思考のブロックにキャッシュブレークポイントは置けません");
 	}
+	const toolsets = (params.tools ?? []).flatMap((tool) =>
+		"mcp_server_name" in tool ? [tool.mcp_server_name] : [],
+	);
+	for (const server of params.mcp_servers ?? []) {
+		if (toolsets.filter((name) => name === server.name).length !== 1) {
+			throw new Error("MCP サーバーはちょうど1つのツールセットから指します");
+		}
+	}
+	if (toolsets.some((name) => !params.mcp_servers?.some((server) => server.name === name))) {
+		throw new Error("ツールセットは MCP サーバーを指します");
+	}
 }
 
 function blocksOf(message: BetaMessageParam): Block[] {
@@ -75,6 +86,24 @@ function deferred(): { promise: Promise<BetaMessage>; resolve: (message: BetaMes
 		resolve = r;
 	});
 	return { promise, resolve };
+}
+
+/**
+ * MCP サーバーにつながらなかったときに API が返すエラー
+ */
+function mcpServerUnreachable(): Error {
+	return new Anthropic.BadRequestError(
+		400,
+		{
+			type: "error",
+			error: {
+				type: "invalid_request_error",
+				message: "mcp_servers[0] 'community': Error while communicating with MCP server.",
+			},
+		},
+		undefined,
+		new Headers(),
+	);
 }
 
 function claudeMessage(
@@ -862,6 +891,59 @@ describe("ルームのゲーム", () => {
 		}
 
 		expect(JSON.stringify(claude.requests[2].messages)).toContain("最初の質問");
+	});
+});
+
+describe("サーバー固有の情報", () => {
+	it("MCP サーバーの URL があれば、MCP サーバーのツールを Claude に渡す", async () => {
+		const claude = fakeClaude([claudeMessage([text("答え")])]);
+		world = await createWorld({ claude: claude.createMessage, mcpUrl: "https://example.com/mcp" });
+		const { room, members } = await world.setupRoom("alice");
+
+		await members[0].post(room.textChannel, { mentionBot: true, content: "質問" });
+
+		expect(claude.requests[0].mcp_servers?.map((server) => server.url)).toEqual([
+			"https://example.com/mcp",
+		]);
+		expect(world.botMessages(room.textChannel)[0].content).toBe("答え");
+	});
+
+	it("MCP サーバーにつながらなければ、MCP サーバーなしで答える", async () => {
+		const claude = fakeClaude([mcpServerUnreachable(), claudeMessage([text("答え")])]);
+		world = await createWorld({ claude: claude.createMessage, mcpUrl: "https://example.com/mcp" });
+		const { room, members } = await world.setupRoom("alice");
+
+		await members[0].post(room.textChannel, { mentionBot: true, content: "質問" });
+
+		expect(claude.requests[1].mcp_servers ?? []).toEqual([]);
+		expect(world.botMessages(room.textChannel)[0].content).toBe("答え");
+	});
+
+	it("MCP サーバーにつながらなかった後の質問では、また MCP サーバーを渡す", async () => {
+		const claude = fakeClaude([
+			mcpServerUnreachable(),
+			claudeMessage([text("答え1")]),
+			claudeMessage([text("答え2")]),
+		]);
+		world = await createWorld({ claude: claude.createMessage, mcpUrl: "https://example.com/mcp" });
+		const { room, members } = await world.setupRoom("alice");
+
+		await members[0].post(room.textChannel, { mentionBot: true, content: "質問1" });
+		await members[0].post(room.textChannel, { mentionBot: true, content: "質問2" });
+
+		expect(claude.requests[2].mcp_servers?.map((server) => server.url)).toEqual([
+			"https://example.com/mcp",
+		]);
+	});
+
+	it("MCP サーバーの URL がなければ、MCP サーバーを渡さない", async () => {
+		const claude = fakeClaude([claudeMessage([text("答え")])]);
+		world = await createWorld({ claude: claude.createMessage });
+		const { room, members } = await world.setupRoom("alice");
+
+		await members[0].post(room.textChannel, { mentionBot: true, content: "質問" });
+
+		expect(claude.requests[0].mcp_servers ?? []).toEqual([]);
 	});
 });
 

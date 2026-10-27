@@ -51,6 +51,16 @@ describe("設定の読み込み", () => {
 		expect(config.assistant?.model).toBe("claude-sonnet-5-5");
 	});
 
+	it("MCP サーバーの URL は環境変数で渡す", () => {
+		const config = loadConfig({
+			...env,
+			ANTHROPIC_API_KEY: "key",
+			ASSISTANT_MCP_URL: "https://example.com/mcp",
+		});
+
+		expect(config.assistant?.mcpUrl).toBe("https://example.com/mcp");
+	});
+
 	it("Claude API のキーが未設定の場合は、ゲームの質問に答える機能を使わない", () => {
 		expect(loadConfig(env).assistant).toBeUndefined();
 	});

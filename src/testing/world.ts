@@ -36,12 +36,14 @@ const START_TIME = new Date("2026-09-27T12:00:00+09:00");
  * Bot と偽の Discord サーバーからなるテスト環境を作る
  * タイマーと日時は偽物に切り替わり、world.advance() でだけ進む
  */
-export async function createWorld(options: { claude?: CreateMessage } = {}): Promise<World> {
+export async function createWorld(
+	options: { claude?: CreateMessage; mcpUrl?: string } = {},
+): Promise<World> {
 	vi.useFakeTimers({
 		toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"],
 		now: START_TIME,
 	});
-	const world = new World(options.claude);
+	const world = new World(options.claude, options.mcpUrl);
 	// Bot が HTTP で取得するのは Discord の添付ファイルだけ
 	vi.stubGlobal("fetch", (input: string | URL | Request) => world.server.fetchAttachment(input));
 	await world.startBot();
@@ -67,7 +69,10 @@ export class World {
 	};
 	private bot: { client: Client; ctx: AppContext } | null = null;
 
-	constructor(private claude?: CreateMessage) {
+	constructor(
+		private claude?: CreateMessage,
+		private mcpUrl?: string,
+	) {
 		this.ignoredRole = this.server.addRole("管理者");
 		const readyCategory = this.server.addChannel({
 			type: ChannelType.GuildCategory,
@@ -96,7 +101,11 @@ export class World {
 			readyChannelId: this.readyChannel.id,
 			wantedChannelId: this.wantedChannel.id,
 			ignoreRoleIds: [this.ignoredRole.id],
-			assistant: this.claude && { anthropicApiKey: "key", model: "test-model" },
+			assistant: this.claude && {
+				anthropicApiKey: "key",
+				model: "test-model",
+				mcpUrl: this.mcpUrl,
+			},
 		};
 	}
 

@@ -46,7 +46,7 @@ export function createBot(
 	if (config.assistant) {
 		const api = overrides.claudeApi ?? claudeApi(config.assistant.anthropicApiKey);
 		assistant = new Assistant(
-			new Claude(api.createMessage, config.assistant.model),
+			new Claude(api.createMessage, config.assistant.model, config.assistant.mcpUrl),
 			new ConversationStore(databases("conversations")),
 			api.files,
 			new FileStore(databases("files")),

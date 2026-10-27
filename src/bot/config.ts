@@ -17,6 +17,9 @@ interface BotConfig {
 interface AssistantConfig {
 	anthropicApiKey: string;
 	model: string;
+	// サーバー固有の情報を答えに使うための MCP サーバーの URL
+	// あるときだけ Claude に渡す
+	mcpUrl?: string;
 }
 
 // 質問に答えるモデルの既定値
@@ -49,6 +52,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BotConfig {
 			? {
 					anthropicApiKey: env.ANTHROPIC_API_KEY,
 					model: env.ASSISTANT_MODEL || DEFAULT_ASSISTANT_MODEL,
+					mcpUrl: env.ASSISTANT_MCP_URL || undefined,
 				}
 			: undefined,
 	};

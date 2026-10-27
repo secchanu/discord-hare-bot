@@ -53,9 +53,11 @@ Claude APIのキーを設定すると、ゲームの質問に答える機能が�
 ```env
 ANTHROPIC_API_KEY=Claude APIのキー
 ASSISTANT_MODEL=質問に答えるモデル（既定: claude-opus-5-5）
+ASSISTANT_MCP_URL=サーバー固有の情報（イベント・Botの使い方など）を返すMCPサーバーのURL（任意）
 ```
 
 - 返信先の本文を読むため、Discord Developer PortalでMessage Content Intentを有効にする
+- MCPサーバーはClaude APIのMCPコネクタがつなぐので、インターネットからHTTPSで届くURLにする
 - 会話はルームごとに `sqlite/conversations.sqlite` に保存し、ルームを削除すると一緒に削除する
 - リクエストごとのトークンの使用量をログに出す
 
