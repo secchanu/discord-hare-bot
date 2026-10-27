@@ -19,7 +19,6 @@ async function main(): Promise<void> {
 	}
 
 	const { client } = createBot(config, (name) => openDatabase(`${name}.sqlite`));
-	console.log("Event handlers registered");
 
 	try {
 		const shutdown = (): void => {
@@ -31,7 +30,6 @@ async function main(): Promise<void> {
 		process.on("SIGTERM", shutdown);
 
 		await client.login(config.botToken);
-		console.log("Bot initialization complete");
 	} catch (error) {
 		console.error("Failed to start bot", error);
 		process.exit(EXIT_CODE.ERROR);

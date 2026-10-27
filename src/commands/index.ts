@@ -27,7 +27,6 @@ export async function registerCommands(guild: Guild): Promise<void> {
 	const commandData = Array.from(commands.values()).map((cmd) => cmd.data);
 
 	await guild.commands.set(commandData);
-	console.log(`Registered ${commandData.length} commands to guild ${guild.id}`);
 }
 
 /**

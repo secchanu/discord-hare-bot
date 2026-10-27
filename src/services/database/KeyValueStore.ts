@@ -9,9 +9,7 @@ export function openDatabase(filename: string): DatabaseSync {
 	const dbPath = resolve(process.cwd(), "sqlite", filename);
 	mkdirSync(dirname(dbPath), { recursive: true });
 
-	const db = new DatabaseSync(dbPath);
-	console.log(`[Database] Opened: ${dbPath}`);
-	return db;
+	return new DatabaseSync(dbPath);
 }
 
 /**

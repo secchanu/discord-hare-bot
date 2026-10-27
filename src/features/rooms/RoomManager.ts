@@ -253,8 +253,6 @@ export class RoomManager {
 	 * Bot の起動時に、保存されているルームを復旧する
 	 */
 	async recoverRooms(guild: Guild): Promise<void> {
-		console.log("[RoomManager] Recovering guild rooms...");
-
 		const roomDataList = this.store.getAll();
 		let recoveredCount = 0;
 		let failedCount = 0;
@@ -294,8 +292,6 @@ export class RoomManager {
 	 * Bot の停止中に起きた出入りやイベントの変化は、起動時にだけ検知できる
 	 */
 	async reconcile(guild: Guild): Promise<void> {
-		console.log("[RoomManager] Reconciling rooms...");
-
 		// oxlint-disable-next-line unicorn/no-useless-spread -- removeRoom が反復中に this.rooms を変更するためスナップショットを取る
 		for (const room of [...this.rooms.values()]) {
 			try {
@@ -315,7 +311,5 @@ export class RoomManager {
 				console.error(`[RoomManager] Failed to reconcile room ${room.id}:`, error);
 			}
 		}
-
-		console.log("[RoomManager] Reconcile complete");
 	}
 }

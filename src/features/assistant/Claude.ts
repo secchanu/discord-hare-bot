@@ -192,7 +192,6 @@ export class Claude {
 				);
 			}
 			signal.throwIfAborted();
-			console.log(`[Claude] Usage of ${response.model}:`, JSON.stringify(response.usage));
 			if (response.input_transformations?.length) {
 				console.warn("[Claude] Input transformed:", JSON.stringify(response.input_transformations));
 			}
