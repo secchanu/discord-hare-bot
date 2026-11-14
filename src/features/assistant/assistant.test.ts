@@ -437,6 +437,17 @@ describe("会話", () => {
 		expect(system).toContain("サンプルBot");
 	});
 
+	it("サーバーオーナーを、Discord での名前で Claude に伝える", async () => {
+		const claude = fakeClaude([claudeMessage([text("答え")])]);
+		world = await createWorld({ claude: claude.createMessage });
+		const { room, members } = await world.setupRoom("alice", "bob");
+		world.server.transferOwnership(members[1].id);
+
+		await members[0].post(room.textChannel, { mentionBot: true, content: "質問" });
+
+		expect(JSON.stringify(claude.requests[0].system)).toContain("bob");
+	});
+
 	it("ほかの人の発言への返信の場合は、返信先を引用して質問に添える", async () => {
 		const claude = fakeClaude([claudeMessage([text("答え")])]);
 		world = await createWorld({ claude: claude.createMessage });

@@ -58,6 +58,8 @@ export interface AttachedFile {
 export interface Place {
 	// Discord のサーバーの名前
 	serverName: string;
+	// サーバーオーナーの表示名
+	ownerName: string;
 	// サーバーでの Bot の表示名
 	botName: string;
 	game: Game;
@@ -81,6 +83,7 @@ function systemPrompt(place: Place, hasServerTools: boolean): string {
 	return `あなたはDiscordサーバー「${place.serverName}」のBot「${place.botName}」として、同じゲームを遊ぶメンバーにルームのチャットで応じます。
 
 ## 前提
+- 鯖主: ${place.ownerName}
 - ルームのゲーム: 会話のシステムメッセージで伝わる
   - 「Free」: ゲームが決まっていない
 - 出典: 投稿時に本文の後へ自動で付く

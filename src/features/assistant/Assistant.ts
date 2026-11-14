@@ -110,6 +110,7 @@ export class Assistant {
 				{ text, files },
 				{
 					serverName: question.guild.name,
+					ownerName: (await question.guild.fetchOwner()).displayName,
 					botName: question.guild.members.me?.displayName ?? question.client.user.displayName,
 					game: room.game,
 				},

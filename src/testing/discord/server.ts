@@ -145,6 +145,7 @@ export class FakeDiscordServer {
 	readonly applicationId = SnowflakeUtil.generate().toString();
 	readonly botUserId = this.applicationId;
 	private guildName = "テストサーバー";
+	private ownerId: string = this.botUserId;
 	/** Bot が入力中の表示を出した記録 */
 	readonly typings: { channelId: string; at: number }[] = [];
 
@@ -243,6 +244,14 @@ export class FakeDiscordServer {
 	 */
 	renameGuild(name: string): void {
 		this.guildName = name;
+		this.dispatch("GUILD_UPDATE", this.rawGuild());
+	}
+
+	/**
+	 * サーバーのオーナーを移す
+	 */
+	transferOwnership(memberId: string): void {
+		this.ownerId = memberId;
 		this.dispatch("GUILD_UPDATE", this.rawGuild());
 	}
 
@@ -1095,7 +1104,7 @@ export class FakeDiscordServer {
 			id: this.guildId,
 			name: this.guildName,
 			icon: null,
-			owner_id: this.botUserId,
+			owner_id: this.ownerId,
 			features: [],
 			emojis: [],
 			stickers: [],
