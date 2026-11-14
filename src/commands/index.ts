@@ -3,7 +3,7 @@ import type { AppContext } from "../bot/context";
 import { callCommand } from "./call";
 import { gameCommand } from "./game";
 import { replyError } from "./helpers";
-import { randCommand } from "./rand";
+import { memberCommand } from "./member";
 import { roomCommand } from "./room";
 import { teamCommand } from "./team";
 import type { CommandHandler, GuildCommandInteraction } from "./types";
@@ -15,7 +15,7 @@ const commands: Map<string, CommandHandler> = new Map([
 	["room", roomCommand],
 	["team", teamCommand],
 	["call", callCommand],
-	["rand", randCommand],
+	["member", memberCommand],
 	["game", gameCommand],
 ]);
 

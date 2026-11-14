@@ -13,10 +13,10 @@ import { getRoomFromTextChannel } from "../helpers/room";
 import type { GuildCommandInteraction } from "../types";
 
 /**
- * /rand data サブコマンド
+ * /game pick サブコマンド
  * ルームのゲームのデータから、項目をランダムに選ぶ
  */
-export async function handleData(
+export async function handlePick(
 	interaction: GuildCommandInteraction,
 	ctx: AppContext,
 ): Promise<void> {

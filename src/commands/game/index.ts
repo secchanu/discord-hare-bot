@@ -1,30 +1,37 @@
 import { SlashCommandBuilder } from "discord.js";
 import type { CommandHandler } from "../types";
-import { handleData } from "./data";
+import { handleEdit } from "./edit";
+import { handlePick } from "./pick";
 
 /**
  * /game コマンド
- * ゲームを設定するサブコマンドをまとめる
+ * ゲーム固有データを扱うサブコマンドをまとめる
  */
 export const gameCommand: CommandHandler = {
 	data: new SlashCommandBuilder()
 		.setName("game")
-		.setDescription("ゲームの設定")
+		.setDescription("ゲーム固有データ")
 		.addSubcommand((subcommand) =>
 			subcommand
-				.setName("data")
-				.setDescription("ゲームデータの編集")
+				.setName("edit")
+				.setDescription("編集する")
 				.addRoleOption((option) =>
 					option.setName("game").setDescription("ゲーム").setRequired(true),
 				),
+		)
+		.addSubcommand((subcommand) =>
+			subcommand.setName("pick").setDescription("ルームのゲームのデータからランダムに選ぶ"),
 		),
 
 	async execute(interaction, ctx) {
 		const subcommand = interaction.options.getSubcommand();
 
 		switch (subcommand) {
-			case "data":
-				await handleData(interaction, ctx);
+			case "edit":
+				await handleEdit(interaction, ctx);
+				break;
+			case "pick":
+				await handlePick(interaction, ctx);
 				break;
 		}
 	},

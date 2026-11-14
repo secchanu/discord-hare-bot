@@ -308,7 +308,7 @@ describe("募集によるゲームの切り替え", () => {
 		world.server.fail(apiRequest("PATCH", new RegExp(`^/channels/${room.voiceChannel.id}$`)));
 
 		await alice.post(world.wantedChannel, { mentions: [apex] });
-		const run = await alice.run("rand data", room.textChannel);
+		const run = await alice.run("game pick", room.textChannel);
 
 		expect(run.privateMessages).toEqual([
 			"抽選できるデータがありません\nルームのゲームを確認してください\n現在のゲームは「APEX」です",

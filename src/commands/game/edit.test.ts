@@ -24,10 +24,10 @@ function setupGame(data?: Record<string, string[]>) {
 }
 
 /**
- * /game data を実行してデータを選び、フォームを開く
+ * /game edit を実行してデータを選び、フォームを開く
  */
 async function openForm(member: Member, role: RoleState, key: string) {
-	const run = await member.run("game data", world.generalChannel, { game: role });
+	const run = await member.run("game edit", world.generalChannel, { game: role });
 	const message = run.response;
 	await member.select(message, "data_key", [key]);
 	return message;
@@ -37,7 +37,7 @@ describe("実行条件", () => {
 	it("@everyone を指定した場合は実行者にだけエラーを返す", async () => {
 		const { alice } = setupGame();
 
-		const run = await alice.run("game data", world.generalChannel, { game: world.everyoneRole });
+		const run = await alice.run("game edit", world.generalChannel, { game: world.everyoneRole });
 
 		expect(run.publicMessages).toEqual([]);
 		expect(run.privateMessages).toEqual(["このロールはゲームとして選択できません"]);
@@ -46,7 +46,7 @@ describe("実行条件", () => {
 	it("除外ロールを指定した場合は実行者にだけエラーを返す", async () => {
 		const alice = world.addMember("alice", { roles: [world.ignoredRole] });
 
-		const run = await alice.run("game data", world.generalChannel, { game: world.ignoredRole });
+		const run = await alice.run("game edit", world.generalChannel, { game: world.ignoredRole });
 
 		expect(run.publicMessages).toEqual([]);
 		expect(run.privateMessages).toEqual(["このロールはゲームとして選択できません"]);
@@ -56,7 +56,7 @@ describe("実行条件", () => {
 		const apex = world.addRole("APEX");
 		const alice = world.addMember("alice");
 
-		const run = await alice.run("game data", world.generalChannel, { game: apex });
+		const run = await alice.run("game edit", world.generalChannel, { game: apex });
 
 		expect(run.publicMessages).toEqual([]);
 		expect(run.privateMessages).toEqual([
@@ -69,7 +69,7 @@ describe("編集するデータの選択", () => {
 	it("選択肢には、既存のデータと新規作成が並ぶ", async () => {
 		const { apex, alice } = setupGame({ マップ: ["A"], キャラ: ["B"] });
 
-		const run = await alice.run("game data", world.generalChannel, { game: apex });
+		const run = await alice.run("game edit", world.generalChannel, { game: apex });
 
 		expect(run.response.selectMenu("data_key")?.map((option) => option.value)).toEqual([
 			"マップ",
@@ -82,7 +82,7 @@ describe("編集するデータの選択", () => {
 		const keys = Array.from({ length: 25 }, (_, i) => `データ${i + 1}`);
 		const { apex, alice } = setupGame(Object.fromEntries(keys.map((key) => [key, ["A"]])));
 
-		const run = await alice.run("game data", world.generalChannel, { game: apex });
+		const run = await alice.run("game edit", world.generalChannel, { game: apex });
 
 		expect(run.response.selectMenu("data_key")?.map((option) => option.value)).toEqual([
 			...keys.slice(0, 24),
@@ -116,7 +116,7 @@ describe("編集するデータの選択", () => {
 
 	it("実行者以外の選択は受け付けず、操作した人にだけ伝える", async () => {
 		const { apex, alice } = setupGame({ マップ: ["A"] });
-		const run = await alice.run("game data", world.generalChannel, { game: apex });
+		const run = await alice.run("game edit", world.generalChannel, { game: apex });
 		const bob = world.addMember("bob", { roles: [apex] });
 
 		const record = await bob.select(run.response, "data_key", ["マップ"]);
@@ -213,7 +213,7 @@ describe("データの保存", () => {
 describe("無操作の時間", () => {
 	it("選択がないまま無操作の時間が過ぎると、「タイムアウトしました」に置き換えてメニューを取り除く", async () => {
 		const { apex, alice } = setupGame({ マップ: ["A"] });
-		const run = await alice.run("game data", world.generalChannel, { game: apex });
+		const run = await alice.run("game edit", world.generalChannel, { game: apex });
 
 		await world.advance(TIMEOUT.COMPONENT_IDLE);
 

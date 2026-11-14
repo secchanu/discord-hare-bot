@@ -5,10 +5,10 @@ import { getRoomFromVoiceAndTextChannel } from "../helpers/room";
 import type { GuildCommandInteraction } from "../types";
 
 /**
- * /rand member サブコマンド
+ * /member pick サブコマンド
  * ボイスチャンネルのメンバーからランダムに選ぶ
  */
-export async function handleMember(
+export async function handlePick(
 	interaction: GuildCommandInteraction,
 	ctx: AppContext,
 ): Promise<void> {

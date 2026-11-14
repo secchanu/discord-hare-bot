@@ -17,10 +17,10 @@ import { getGameRoleError, INVALID_GAME_ROLE_MESSAGE } from "../helpers/game";
 import type { GuildCommandInteraction } from "../types";
 
 /**
- * /game data サブコマンド
+ * /game edit サブコマンド
  * ゲームのデータを編集する
  */
-export async function handleData(
+export async function handleEdit(
 	interaction: GuildCommandInteraction,
 	ctx: AppContext,
 ): Promise<void> {

@@ -352,7 +352,7 @@ export class Member {
 
 	/**
 	 * スラッシュコマンドを実行する
-	 * @param command "team" や "rand data" のようにサブコマンドまで空白区切りで指定する
+	 * @param command "team" や "room vc" のようにサブコマンドまで空白区切りで指定する
 	 */
 	async run(
 		command: string,
