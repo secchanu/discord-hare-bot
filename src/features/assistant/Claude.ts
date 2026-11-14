@@ -169,6 +169,10 @@ export class Claude {
 		signal: AbortSignal,
 	): Promise<Answer> {
 		const messages = withQuestion(conversation, question, place.game);
+		// 受け取ったままの応答
+		// 答えと出典は、送り返す応答から外したブロックも含めて読む
+		const received: BetaMessageParam[] = [];
+		// 会話に書き足して送り返す応答
 		const replies: BetaMessageParam[] = [];
 		let mcpUrl = this.mcpUrl;
 
@@ -198,7 +202,8 @@ export class Claude {
 
 			if (response.stop_reason === "refusal") return { refused: true };
 
-			replies.push({ role: "assistant", content: response.content });
+			received.push({ role: "assistant", content: response.content });
+			replies.push({ role: "assistant", content: sendable(response.content) });
 
 			// サーバーツールの実行が中断されたら、そのまま送り直すと続きから再開する
 			if (response.stop_reason === "pause_turn") continue;
@@ -206,7 +211,7 @@ export class Claude {
 				throw new Error(`Answer stopped by ${response.stop_reason}`);
 			}
 
-			const final = finalTextBlocks(replies.flatMap(blocksOf));
+			const final = finalTextBlocks(received.flatMap(blocksOf));
 			const text = final
 				.map((block) => block.text)
 				.join("")
@@ -216,7 +221,7 @@ export class Claude {
 			return {
 				refused: false,
 				text,
-				sources: [...new Set([...final.flatMap(citedSources), ...fetchedPages(replies)])],
+				sources: [...new Set([...final.flatMap(citedSources), ...fetchedPages(received)])],
 				conversation: nextConversation(messages, replies, place.game),
 			};
 		}
@@ -327,6 +332,16 @@ function fileBlock({ kind, fileId, filename }: AttachedFile): BetaContentBlockPa
 }
 
 /**
+ * 応答のうち、API に送り返せるブロック
+ * API は本文が空のテキストのブロックを返すことがあるが、送られると拒否する
+ * 応答は受け取ったまま送り返すのが原則なので、外すのはそのブロックだけにする
+ * 外したブロックより後の思考は、前の会話と合わなくなって API に捨てられる
+ */
+function sendable(content: BetaMessage["content"]): BetaContentBlockParam[] {
+	return content.filter((block) => block.type !== "text" || block.text !== "");
+}
+
+/**
  * 答えた後の会話
  * 応答の中で要約されたら、要約から後だけを持つ（API は要約から後だけを読む）
  * 要約されたシステムメッセージは効かなくなるので、要約の後はゲームを伝えていない状態にする
@@ -382,8 +397,8 @@ function finalTextBlocks(blocks: Block[]): TextBlock[] {
  * 答えのために取得したページ
  * 取得したページはコード実行で抜き出してから読むので、本文の出典には結び付かない
  */
-function fetchedPages(replies: BetaMessageParam[]): string[] {
-	return replies.flatMap(blocksOf).flatMap((block) => {
+function fetchedPages(received: BetaMessageParam[]): string[] {
+	return received.flatMap(blocksOf).flatMap((block) => {
 		if (block.type !== "web_fetch_tool_result") return [];
 		const result = block.content as Anthropic.Beta.Messages.BetaWebFetchToolResultBlock["content"];
 		return result.type === "web_fetch_result" ? [result.url] : [];

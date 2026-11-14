@@ -58,6 +58,9 @@ function assertAcceptable(params: MessageCreateParams): void {
 	if (blocks.some((block) => block.type.endsWith("thinking") && block.cache_control)) {
 		throw new Error("思考のブロックにキャッシュブレークポイントは置けません");
 	}
+	if (blocks.some((block) => block.type === "text" && block.text === "")) {
+		throw new Error("テキストのブロックの本文は空にできません");
+	}
 	const toolsets = (params.tools ?? []).flatMap((tool) =>
 		"mcp_server_name" in tool ? [tool.mcp_server_name] : [],
 	);
@@ -358,6 +361,25 @@ describe("会話", () => {
 		const messages = claude.requests[1].messages;
 		expect(JSON.stringify(messages)).toContain("おすすめのキャラは？");
 		expect(messages).toContainEqual({ role: "assistant", content: first.content });
+	});
+
+	it("Claude の応答に本文が空のブロックがあっても、次の質問に答える", async () => {
+		const url = "https://example.org/characters";
+		const claude = fakeClaude([
+			claudeMessage([
+				...search(url),
+				text("キャラAです"),
+				text("", [searchCitation(url, "キャラ一覧")]),
+			]),
+			claudeMessage([text("剣です")]),
+		]);
+		world = await createWorld({ claude: claude.createMessage });
+		const { room, members } = await world.setupRoom("alice");
+
+		await members[0].post(room.textChannel, { mentionBot: true, content: "おすすめのキャラは？" });
+		await members[0].post(room.textChannel, { mentionBot: true, content: "武器は？" });
+
+		expect(world.botMessages(room.textChannel)[1].content).toBe("剣です");
 	});
 
 	it("Bot に向けていない発言は会話に入れない", async () => {
@@ -963,6 +985,21 @@ describe("出典", () => {
 		);
 	});
 
+	it("本文が空のブロックが引用した検索結果も出典として添える", async () => {
+		const url = "https://example.org/guide";
+		const claude = fakeClaude([
+			claudeMessage([...search(url), text("キャラAです"), text("", [searchCitation(url, "攻略")])]),
+		]);
+		world = await createWorld({ claude: claude.createMessage });
+		const { room, members } = await world.setupRoom("alice");
+
+		await members[0].post(room.textChannel, { mentionBot: true, content: "おすすめのキャラは？" });
+
+		expect(world.botMessages(room.textChannel)[0].content).toBe(
+			"キャラAです\n\n-# 出典: [example.org](https://example.org/guide)",
+		);
+	});
+
 	it("答えのために取得したページを出典として添える", async () => {
 		const claude = fakeClaude([
 			claudeMessage([
@@ -1065,6 +1102,20 @@ describe("答えの投稿", () => {
 			role: "assistant",
 			content: paused.content,
 		});
+		expect(world.botMessages(room.textChannel)[0].content).toBe("答え");
+	});
+
+	it("本文が空のブロックがある応答が中断された場合も、送り直して続きの答えまで返す", async () => {
+		const paused = claudeMessage(
+			[text(""), ...search("https://example.org/characters")],
+			"pause_turn",
+		);
+		const claude = fakeClaude([paused, claudeMessage([text("答え")])]);
+		world = await createWorld({ claude: claude.createMessage });
+		const { room, members } = await world.setupRoom("alice");
+
+		await members[0].post(room.textChannel, { mentionBot: true, content: "質問" });
+
 		expect(world.botMessages(room.textChannel)[0].content).toBe("答え");
 	});
 
