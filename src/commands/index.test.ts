@@ -27,7 +27,7 @@ describe("コマンド共通", () => {
 		const { room, members } = await world.setupRoom("alice", "bob");
 		world.server.fail(apiRequest("PATCH", /\/messages\/(?:@|%40)original$/));
 
-		const run = await members[0].run("team", room.textChannel);
+		const run = await members[0].run("team random", room.textChannel);
 
 		expect(run.publicMessages).toEqual([]);
 		expect(run.privateMessages).toEqual(["コマンドの実行中にエラーが発生しました"]);
@@ -35,7 +35,7 @@ describe("コマンド共通", () => {
 
 	it("Botの再起動前に表示されたボタンを押すと、操作した人にだけ期限切れを伝える", async () => {
 		const { room, members } = await world.setupRoom("alice", "bob");
-		const run = await members[0].run("team", room.textChannel);
+		const run = await members[0].run("team random", room.textChannel);
 		await members[0].click(run.response, "confirm");
 		await world.restartBot();
 

@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { TIMEOUT } from "../constants";
-import { apiRequest } from "../testing/discord/server";
-import { createWorld, type Member, type MessageView, type World } from "../testing/world";
+import { TIMEOUT } from "../../constants";
+import { createWorld, type MessageView, type World } from "../../testing/world";
 
 let world: World;
 
@@ -33,12 +32,12 @@ function excludedIn(message: MessageView): string[] {
 }
 
 /**
- * ルームで /team を実行し、チーム分けの表示を返す
+ * ルームで /team random を実行し、チーム分けの表示を返す
  */
 async function startTeam(names: string[], options: { number?: number } = {}) {
 	const { room, members } = await world.setupRoom(...names);
 	const [owner] = members;
-	const run = await owner.run("team", room.textChannel, options);
+	const run = await owner.run("team random", room.textChannel, options);
 	return { room, members, owner, message: run.response };
 }
 
@@ -46,7 +45,7 @@ describe("実行条件", () => {
 	it("ルーム外から実行した場合は実行者にだけエラーを返す", async () => {
 		const { members } = await world.setupRoom("alice", "bob");
 
-		const run = await members[0].run("team", world.generalChannel);
+		const run = await members[0].run("team random", world.generalChannel);
 
 		expect(run.publicMessages).toEqual([]);
 		expect(run.privateMessages).toEqual(["このコマンドはルーム内でのみ使用できます"]);
@@ -56,7 +55,7 @@ describe("実行条件", () => {
 		const { members } = await world.setupRoom("alice", "bob");
 		const other = await world.addMember("carol").createRoom();
 
-		const run = await members[0].run("team", other.textChannel);
+		const run = await members[0].run("team random", other.textChannel);
 
 		expect(run.publicMessages).toEqual([]);
 		expect(run.privateMessages).toEqual(["このコマンドはルーム内でのみ使用できます"]);
@@ -65,7 +64,7 @@ describe("実行条件", () => {
 	it("ボイスチャンネルに入っていない場合は実行者にだけエラーを返す", async () => {
 		const { room } = await world.setupRoom("alice", "bob");
 
-		const run = await world.addMember("carol").run("team", room.textChannel);
+		const run = await world.addMember("carol").run("team random", room.textChannel);
 
 		expect(run.publicMessages).toEqual([]);
 		expect(run.privateMessages).toEqual(["このコマンドはルーム内でのみ使用できます"]);
@@ -75,7 +74,7 @@ describe("実行条件", () => {
 		const { room, members } = await world.setupRoom("alice");
 		await world.addMember("music-bot", { bot: true }).joinVoice(room.voiceChannel);
 
-		const run = await members[0].run("team", room.textChannel);
+		const run = await members[0].run("team random", room.textChannel);
 
 		expect(run.publicMessages).toEqual([]);
 		expect(run.privateMessages).toEqual(["チーム分けには2人以上のメンバーが必要です"]);
@@ -87,7 +86,7 @@ describe("チーム分け", () => {
 		const { room, members } = await world.setupRoom("a", "b", "c", "d", "e");
 		await world.addMember("music-bot", { bot: true }).joinVoice(room.voiceChannel);
 
-		const run = await members[0].run("team", room.textChannel);
+		const run = await members[0].run("team random", room.textChannel);
 
 		const teams = teamsIn(run.response);
 		expect(teams.flat().sort()).toEqual(members.map((member) => member.mention).sort());
@@ -104,7 +103,7 @@ describe("チーム分け", () => {
 	it("チーム数に1以下は指定できない（境界値）", async () => {
 		const { room, members } = await world.setupRoom("a", "b");
 
-		await expect(members[0].run("team", room.textChannel, { number: 1 })).rejects.toThrow(
+		await expect(members[0].run("team random", room.textChannel, { number: 1 })).rejects.toThrow(
 			RangeError,
 		);
 	});
@@ -125,7 +124,7 @@ describe("チーム分け", () => {
 		const { room, members } = await world.setupRoom("a", "b", "c");
 		await world.addMember("music-bot", { bot: true }).joinVoice(room.voiceChannel);
 
-		const { response: message } = await members[0].run("team", room.textChannel);
+		const { response: message } = await members[0].run("team random", room.textChannel);
 
 		expect(message.selectMenu("exclude")).toEqual(
 			members.map((member) => ({ label: member.name, value: member.id, selected: false })),
@@ -213,32 +212,23 @@ describe("再抽選・キャンセル", () => {
 	});
 });
 
-describe("確定と移動", () => {
-	/**
-	 * 各メンバーが入っているボイスチャンネルの名前
-	 */
-	function voiceChannelNamesOf(members: Member[]): Record<string, string | undefined> {
-		return Object.fromEntries(
-			members.map((member) => [
-				member.mention,
-				member.voiceChannelId && world.channel(member.voiceChannelId)?.name,
-			]),
-		);
-	}
-
-	it("確定すると、チーム一覧を残して操作は移動ボタンだけになる", async () => {
+describe("確定", () => {
+	it("確定すると、チーム一覧を残して操作はチームを動かすボタンになる", async () => {
 		const { owner, message } = await startTeam(["a", "b"]);
 		const teams = teamsIn(message);
 
 		await owner.click(message, "confirm");
 
 		expect(teamsIn(message)).toEqual(teams);
-		expect(message.buttons).toEqual(["move"]);
+		expect(message.buttons).toEqual(["move", "gather", "swap"]);
 		expect(message.selectMenu("exclude")).toBeUndefined();
 	});
 
-	it("移動すると、チームごとに追加ボイスチャンネルへ分かれる", async () => {
-		const { owner, members, message } = await startTeam(["a", "b", "c", "d"]);
+	it("追加ボイスチャンネルがチーム数より少なければ、チーム移動でチーム数まで増やしてチームごとに分ける", async () => {
+		const { room, owner, members, message } = await startTeam(["a", "b", "c", "d", "e", "f"], {
+			number: 3,
+		});
+		await owner.run("room vc", room.textChannel, { number: 1 });
 		await owner.click(message, "confirm");
 
 		await owner.click(message, "move");
@@ -248,55 +238,28 @@ describe("確定と移動", () => {
 				team.map((mention) => [mention, `VC [${index + 1}]`]),
 			),
 		);
-		expect(voiceChannelNamesOf(members)).toEqual(expected);
+		expect(
+			Object.fromEntries(
+				members.map((member) => [
+					member.mention,
+					member.voiceChannelId && world.channel(member.voiceChannelId)?.name,
+				]),
+			),
+		).toEqual(expected);
 	});
 
-	it("追加ボイスチャンネルがチーム数より多くても、減らさない", async () => {
-		const { room, owner, message } = await startTeam(["a", "b"]);
-		await owner.run("room vc", room.textChannel, { number: 3 });
-		await owner.click(message, "confirm");
-
-		await owner.click(message, "move");
-
-		expect(room.additionalVoiceChannels.map((channel) => channel.name)).toEqual([
-			"VC [1]",
-			"VC [2]",
-			"VC [3]",
-		]);
-	});
-
-	it("移動した後も移動ボタンが残り、集合した後に同じチームで再び移動できる", async () => {
-		const { room, owner, members, message } = await startTeam(["a", "b", "c", "d"]);
-		await owner.click(message, "confirm");
-		await owner.click(message, "move");
-		const firstMove = voiceChannelNamesOf(members);
-		await owner.run("call", room.voiceChannel);
-
-		await owner.click(message, "move");
-
-		expect(message.buttons).toEqual(["move"]);
-		expect(voiceChannelNamesOf(members)).toEqual(firstMove);
-	});
-
-	it("確定後は、無操作の時間を過ぎても移動できる", async () => {
+	it("確定後は、無操作の時間を過ぎてもチームを動かせる", async () => {
 		const { owner, members, message } = await startTeam(["a", "b"]);
 		await owner.click(message, "confirm");
 
 		await world.advance(TIMEOUT.COMPONENT_IDLE + 1);
 		await owner.click(message, "move");
 
-		expect(Object.values(voiceChannelNamesOf(members)).sort()).toEqual(["VC [1]", "VC [2]"]);
-	});
-
-	it("移動できなかったメンバーがいる場合は、移動ボタンを残して操作した人にだけ伝える", async () => {
-		const { owner, members, message } = await startTeam(["a", "b"]);
-		await owner.click(message, "confirm");
-		world.server.fail(apiRequest("PATCH", new RegExp(`/members/${members[1].id}$`)));
-
-		const record = await owner.click(message, "move");
-
-		expect(record.privateMessages).toEqual(["移動できなかったメンバーがいます"]);
-		expect(message.buttons).toEqual(["move"]);
+		expect(
+			members
+				.map((member) => member.voiceChannelId && world.channel(member.voiceChannelId)?.name)
+				.sort(),
+		).toEqual(["VC [1]", "VC [2]"]);
 	});
 });
 

@@ -173,6 +173,17 @@ export class Room {
 	}
 
 	/**
+	 * 指定した番号のボイスチャンネルにいる Bot 以外のメンバー
+	 * 番号は moveMembers() と同じく、0 がメイン、1 以降が追加ボイスチャンネル
+	 */
+	membersIn(index: number): Collection<Snowflake, GuildMember> {
+		const id = [this._voiceChannelId, ...this.additionalVoiceChannelIds][index];
+		const channel = id ? this.channelManager.resolve(id) : null;
+		if (!channel?.isVoiceBased()) return new Collection();
+		return channel.members.filter((member) => !member.user.bot);
+	}
+
+	/**
 	 * 予約（イベント連携）を解除する
 	 * 削除の直前に呼ぶため、永続化はしない
 	 * 削除されないまま Bot が再起動した場合は、起動時の reconcile が改めて解除する
